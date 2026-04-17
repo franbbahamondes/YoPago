@@ -13,6 +13,7 @@ import { getSavedBank, saveBank, addOwnedBill, getClientId, setBillIdentity } fr
 import type { Json, DatosTransferencia } from "@/types/database"
 import { toast } from "sonner"
 import { ArrowRight, Banknote, CalendarRange, Users, Plus, X } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 
 const BANCOS = [
   "Banco de Chile", "BancoEstado", "Santander", "BCI", "Itaú", "Scotiabank",
@@ -26,6 +27,7 @@ const NIL_UUID = "00000000-0000-0000-0000-000000000000"
 export default function CreateBillForm() {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [nombre, setNombre] = useState("")
   const [otrosParticipantes, setOtrosParticipantes] = useState<string[]>([""])
 
@@ -214,15 +216,30 @@ export default function CreateBillForm() {
 
       {/* CTA fijo */}
       <div className="fixed inset-x-0 bottom-0 border-t bg-background/95 px-5 py-4 backdrop-blur">
-        <div className="mx-auto max-w-md">
+        <div className="mx-auto max-w-md space-y-3">
           <Button
             size="lg"
             className="h-14 w-full gap-2 rounded-2xl text-base font-semibold"
             onClick={handleCreate}
-            disabled={saving}
+            disabled={saving || !termsAccepted}
           >
             {saving ? "Creando…" : <> Crear cuenta y compartir link <ArrowRight className="h-5 w-5" /></>}
           </Button>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <Checkbox
+              id="terms"
+              checked={termsAccepted}
+              onCheckedChange={(v) => setTermsAccepted(v === true)}
+              className="mt-0.5 shrink-0"
+            />
+            <span className="text-xs text-muted-foreground leading-snug">
+              Acepto los{" "}
+              <a href="/terminos" target="_blank" className="underline underline-offset-2 hover:text-foreground">
+                términos de uso
+              </a>{" "}
+              y autorizo a YoPago a usar mis datos de contacto para enviarte novedades y comunicaciones del servicio.
+            </span>
+          </label>
         </div>
       </div>
     </div>
