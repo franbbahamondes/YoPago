@@ -40,8 +40,9 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         blob = (await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 })) as Blob
       }
 
-      // Resize to max 1280px + quality 0.8 to stay well under Vercel's 4.5MB body limit
-      const resized = await new Promise<Blob>((resolve) => {
+      // Resize to max 1280px at 0.8 quality via canvas.toDataURL (synchronous, iOS-safe)
+      // Keeps base64 well under Vercel's 4.5MB body limit
+      const base64Image = await new Promise<string>((resolve) => {
         const img = new Image()
         const url = URL.createObjectURL(blob)
         img.onload = () => {
@@ -52,18 +53,18 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
           canvas.width = Math.round(img.width * scale)
           canvas.height = Math.round(img.height * scale)
           canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height)
-          canvas.toBlob((b) => resolve(b ?? blob), "image/jpeg", 0.8)
+          // toDataURL is synchronous and universally supported (incl. iOS Safari)
+          resolve(canvas.toDataURL("image/jpeg", 0.8).split(",")[1])
         }
-        img.onerror = () => { URL.revokeObjectURL(url); resolve(blob) }
+        img.onerror = () => {
+          URL.revokeObjectURL(url)
+          // Fallback: send original blob as base64 via FileReader
+          const reader = new FileReader()
+          reader.onload = () => resolve((reader.result as string).split(",")[1])
+          reader.onerror = () => resolve("")
+          reader.readAsDataURL(blob)
+        }
         img.src = url
-      })
-
-      // Read resized image as base64 for Claude
-      const base64Image = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve((reader.result as string).split(",")[1])
-        reader.onerror = reject
-        reader.readAsDataURL(resized)
       })
 
       // Upload original blob to Supabase Storage in parallel (best-effort, non-blocking)
