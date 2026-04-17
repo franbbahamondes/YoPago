@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getPostHogClient } from "@/lib/posthog-server"
 
+export const maxDuration = 60
+
 const MODEL = "claude-sonnet-4-5"
 
 export async function POST(req: NextRequest) {
@@ -9,11 +11,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ANTHROPIC_API_KEY no configurada" }, { status: 500 })
   }
 
-  let imageUrl: string
+  let base64Image: string
   try {
     const body = await req.json()
-    imageUrl = body.imageUrl
-    if (!imageUrl) throw new Error("imageUrl requerida")
+    base64Image = body.base64Image
+    if (!base64Image) throw new Error("base64Image requerida")
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 })
   }
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
         {
           role: "user",
           content: [
-            { type: "image", source: { type: "url", url: imageUrl } },
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Image } },
             { type: "text", text: "Extrae los items de esta boleta." },
           ],
         },

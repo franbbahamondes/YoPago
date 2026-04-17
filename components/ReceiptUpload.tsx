@@ -40,20 +40,29 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         blob = (await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 })) as Blob
       }
 
+      // Read image as base64 to send directly to Claude (avoids public URL dependency)
+      const base64Image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve((reader.result as string).split(",")[1])
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+
+      // Upload to Supabase Storage in parallel — doesn't block OCR
       const supabase = createClient()
       const path = `${bill.id}/${Date.now()}.jpg`
-      const { error: upErr } = await supabase.storage.from("receipts").upload(path, blob, { upsert: true })
-      if (upErr) throw upErr
+      supabase.storage.from("receipts").upload(path, blob, { upsert: true }).then(({ error: upErr }) => {
+        if (upErr) { console.error("Storage upload failed:", upErr); return }
+        const { data: { publicUrl } } = supabase.storage.from("receipts").getPublicUrl(path)
+        setPreview(publicUrl)
+        supabase.from("bills").update({ imagen_url: publicUrl }).eq("id", bill.id).select().single()
+          .then(({ data: updatedBill, error: billErr }) => {
+            if (!billErr && updatedBill) onBillUpdated(updatedBill)
+          })
+      })
 
-      const { data: { publicUrl } } = supabase.storage.from("receipts").getPublicUrl(path)
-
-      const { data: updatedBill, error: billErr } = await supabase
-        .from("bills").update({ imagen_url: publicUrl }).eq("id", bill.id).select().single()
-      if (billErr) throw billErr
-      onBillUpdated(updatedBill)
-      setPreview(publicUrl)
-
-      // Extract items with Claude
+      // Start OCR immediately with base64
+      setUploading(false)
       setExtracting(true)
       const distinctId = posthog.get_distinct_id()
       const res = await fetch("/api/extract-receipt", {
@@ -62,7 +71,7 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
           "Content-Type": "application/json",
           ...(distinctId ? { "x-posthog-distinct-id": distinctId } : {}),
         },
-        body: JSON.stringify({ imageUrl: publicUrl }),
+        body: JSON.stringify({ base64Image, billId: bill.id }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Error al procesar la imagen")
