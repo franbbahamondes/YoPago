@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import posthog from "posthog-js"
 import JoinDialog from "@/components/JoinDialog"
 import ItemRow from "@/components/ItemRow"
 import AddItemForm from "@/components/AddItemForm"
@@ -102,6 +103,12 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
         // Revert
         setAssignments(p => [...p, { item_id: itemId, participant_id: participantId }])
         toast.error("No se pudo quitar la asignación")
+      } else {
+        posthog.capture("item_unassigned", {
+          bill_slug: bill.slug,
+          item_id: itemId,
+          participant_id: participantId,
+        })
       }
     } else {
       const { error } = await supabase.from("item_assignments").insert({ item_id: itemId, participant_id: participantId })
@@ -109,9 +116,15 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
         // Revert
         setAssignments(p => p.filter(x => !(x.item_id === itemId && x.participant_id === participantId)))
         toast.error("No se pudo asignar")
+      } else if (!error) {
+        posthog.capture("item_assigned", {
+          bill_slug: bill.slug,
+          item_id: itemId,
+          participant_id: participantId,
+        })
       }
     }
-  }, [])
+  }, [bill.slug])
 
   const handleItemAdded = (item: Item) => setItems(p => [...p, item])
   const handleItemDeleted = (id: string) => {
@@ -123,6 +136,9 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
   const copyLink = () => {
     navigator.clipboard.writeText(shareUrl)
     toast.success("Link copiado")
+    posthog.capture("bill_link_copied", {
+      bill_slug: bill.slug,
+    })
   }
 
   const datos = billData.datos_transferencia as unknown as DatosTransferencia | null

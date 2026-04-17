@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import posthog from "posthog-js"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -104,9 +105,24 @@ export default function CreateBillForm() {
       saveBank(datosTransferencia)
       addOwnedBill(slug)
       setBillIdentity(slug, { participantId: creadorParticipant.id, name: creadorName })
+
+      posthog.identify(clientId, {
+        name: creadorName,
+        ...(email.trim() ? { email: email.trim() } : {}),
+      })
+      posthog.capture("bill_created", {
+        bill_slug: slug,
+        event_name: nombre.trim(),
+        participant_count: 1 + otros.length,
+        has_transfer_data: !!(banco.trim() || numero.trim()),
+        has_pre_registered_participants: otros.length > 0,
+        marketing_opt_in: termsAccepted,
+      })
+
       router.push(`/b/${slug}`)
     } catch (e) {
       console.error(e)
+      posthog.captureException(e)
       toast.error("No se pudo crear la cuenta")
       setSaving(false)
     }

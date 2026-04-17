@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client"
 import type { Bill } from "@/types/database"
 import { toast } from "sonner"
 import { Percent } from "lucide-react"
+import posthog from "posthog-js"
 
 interface Props {
   bill: Bill
@@ -32,9 +33,15 @@ export default function TipDiscountPanel({ bill, onUpdated }: Props) {
       }
       const { data, error } = await supabase.from("bills").update(updates).eq("id", bill.id).select().single()
       if (error) throw error
+      posthog.capture("tip_discount_applied", {
+        bill_id: bill.id,
+        tip_percent: updates.tip_percent,
+        discount_percent: updates.global_discount_percent,
+        discount_amount: updates.global_discount_amount,
+      })
       onUpdated(data)
       toast.success("Guardado")
-    } catch { toast.error("No se pudo guardar") }
+    } catch (e) { posthog.captureException(e); toast.error("No se pudo guardar") }
     finally { setSaving(false) }
   }
 

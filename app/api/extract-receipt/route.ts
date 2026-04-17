@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getPostHogClient } from "@/lib/posthog-server"
 
 const MODEL = "claude-sonnet-4-5"
 
@@ -67,15 +68,32 @@ export async function POST(req: NextRequest) {
     }),
   })
 
+  const distinctId = req.headers.get("x-posthog-distinct-id") ?? "anonymous"
+
   if (response.status === 429) {
+    getPostHogClient().capture({
+      distinctId,
+      event: "receipt_extraction_failed",
+      properties: { reason: "rate_limit", status: 429 },
+    })
     return NextResponse.json({ error: "Demasiadas solicitudes. Intenta en unos segundos." }, { status: 429 })
   }
   if (response.status === 401 || response.status === 403) {
+    getPostHogClient().capture({
+      distinctId,
+      event: "receipt_extraction_failed",
+      properties: { reason: "auth_error", status: response.status },
+    })
     return NextResponse.json({ error: "API key de Anthropic inválida." }, { status: 402 })
   }
   if (!response.ok) {
     const text = await response.text()
     console.error("Anthropic error:", response.status, text)
+    getPostHogClient().capture({
+      distinctId,
+      event: "receipt_extraction_failed",
+      properties: { reason: "api_error", status: response.status },
+    })
     return NextResponse.json({ error: "Error procesando la imagen" }, { status: 500 })
   }
 
@@ -90,6 +108,12 @@ export async function POST(req: NextRequest) {
     quantity: number
     discount_amount?: number
   }[]
+
+  getPostHogClient().capture({
+    distinctId,
+    event: "receipt_extraction_completed",
+    properties: { items_extracted: items.length },
+  })
 
   return NextResponse.json({ items })
 }

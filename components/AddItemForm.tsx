@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client"
 import type { Item } from "@/types/database"
 import { toast } from "sonner"
 import { Plus } from "lucide-react"
+import posthog from "posthog-js"
 
 interface Props {
   billId: string
@@ -34,6 +35,12 @@ export default function AddItemForm({ billId, nextOrden, onAdded }: Props) {
         .select()
         .single()
       if (error) throw error
+      posthog.capture("item_added_manually", {
+        bill_id: billId,
+        item_name: descripcion.trim(),
+        price: p,
+        quantity: parseInt(cantidad) || 1,
+      })
       onAdded(data)
       setDescripcion("")
       setPrecio("")
@@ -41,6 +48,7 @@ export default function AddItemForm({ billId, nextOrden, onAdded }: Props) {
       setOpen(false)
     } catch (e) {
       console.error(e)
+      posthog.captureException(e)
       toast.error("No se pudo agregar el ítem")
     } finally {
       setSaving(false)

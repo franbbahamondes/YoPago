@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client"
 import type { Bill, Item } from "@/types/database"
 import { toast } from "sonner"
 import { Camera, Loader2, X, Check } from "lucide-react"
+import posthog from "posthog-js"
 
 interface ExtractedItem {
   name: string
@@ -54,15 +55,24 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
 
       // Extract items with Claude
       setExtracting(true)
+      const distinctId = posthog.get_distinct_id()
       const res = await fetch("/api/extract-receipt", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(distinctId ? { "x-posthog-distinct-id": distinctId } : {}),
+        },
         body: JSON.stringify({ imageUrl: publicUrl }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Error al procesar la imagen")
+      posthog.capture("receipt_uploaded", {
+        bill_id: bill.id,
+        items_detected: json.items?.length ?? 0,
+      })
       setExtracted(json.items)
     } catch (e) {
+      posthog.captureException(e)
       toast.error(e instanceof Error ? e.message : "Error al subir la imagen")
     } finally {
       setUploading(false)
@@ -85,10 +95,14 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
       }))
       const { data, error } = await supabase.from("items").insert(toInsert).select()
       if (error) throw error
+      posthog.capture("receipt_items_confirmed", {
+        bill_id: bill.id,
+        items_confirmed: data.length,
+      })
       onItemsExtracted(data)
       setExtracted(null)
       toast.success(`${data.length} ítems agregados`)
-    } catch { toast.error("No se pudieron guardar los ítems") }
+    } catch (e) { posthog.captureException(e); toast.error("No se pudieron guardar los ítems") }
     finally { setSaving(false) }
   }
 

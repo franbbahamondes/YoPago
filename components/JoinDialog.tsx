@@ -9,6 +9,7 @@ import { getClientId, setBillIdentity } from "@/lib/local-storage"
 import type { Bill, Participant } from "@/types/database"
 import { toast } from "sonner"
 import { UserPlus } from "lucide-react"
+import posthog from "posthog-js"
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
@@ -41,9 +42,15 @@ export default function JoinDialog({ bill, participants, onJoined }: Props) {
         .eq("id", participant.id)
       if (error) throw error
       setBillIdentity(bill.slug, { participantId: participant.id, name: participant.nombre })
+      posthog.identify(myClientId, { name: participant.nombre })
+      posthog.capture("participant_claimed", {
+        bill_slug: bill.slug,
+        participant_name: participant.nombre,
+      })
       onJoined(participant.id, participant.nombre)
     } catch (e) {
       console.error(e)
+      posthog.captureException(e)
       toast.error("No se pudo seleccionar participante")
       setLoading(false)
     }
@@ -62,9 +69,15 @@ export default function JoinDialog({ bill, participants, onJoined }: Props) {
         .single()
       if (error) throw error
       setBillIdentity(bill.slug, { participantId: data.id, name: trimmed })
+      posthog.identify(myClientId, { name: trimmed })
+      posthog.capture("participant_joined_as_new", {
+        bill_slug: bill.slug,
+        participant_name: trimmed,
+      })
       onJoined(data.id, trimmed)
     } catch (e) {
       console.error(e)
+      posthog.captureException(e)
       toast.error("No se pudo unir a la cuenta")
       setLoading(false)
     }
