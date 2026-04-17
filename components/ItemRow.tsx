@@ -9,7 +9,7 @@ import { formatCLP } from "@/lib/format"
 import { itemEffectiveTotal } from "@/lib/totals"
 import type { Item, Participant, ItemAssignment } from "@/types/database"
 import { toast } from "sonner"
-import { Pencil, Trash2, Check, X } from "lucide-react"
+import { Pencil, Trash2, Check, X, Tag } from "lucide-react"
 
 interface Props {
   item: Item
@@ -32,6 +32,8 @@ export default function ItemRow({
   const [discPct, setDiscPct] = useState(String(item.descuento_porcentaje || ""))
   const [discAmt, setDiscAmt] = useState(String(item.descuento_monto || ""))
   const [saving, setSaving] = useState(false)
+  const [quickDisc, setQuickDisc] = useState(false)
+  const [quickDiscPct, setQuickDiscPct] = useState(String(item.descuento_porcentaje || ""))
 
   const assignedIds = new Set(assignments.filter(a => a.item_id === item.id).map(a => a.participant_id))
   const gross = item.precio * item.cantidad
@@ -59,6 +61,24 @@ export default function ItemRow({
       if (error) throw error
       onUpdated(data)
       setEditing(false)
+    } catch { toast.error("No se pudo guardar") }
+    finally { setSaving(false) }
+  }
+
+  const handleQuickDiscount = async () => {
+    const pct = parseFloat(quickDiscPct) || 0
+    setSaving(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from("items")
+        .update({ descuento_porcentaje: pct })
+        .eq("id", item.id)
+        .select()
+        .single()
+      if (error) throw error
+      onUpdated(data)
+      setQuickDisc(false)
     } catch { toast.error("No se pudo guardar") }
     finally { setSaving(false) }
   }
@@ -129,8 +149,11 @@ export default function ItemRow({
         </div>
         {isOwner && (
           <div className="flex shrink-0 gap-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(true)}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(true); setQuickDisc(false) }}>
               <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setQuickDisc(v => !v); setQuickDiscPct(String(item.descuento_porcentaje || "")) }}>
+              <Tag className="h-3.5 w-3.5" />
             </Button>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleDelete}>
               <Trash2 className="h-3.5 w-3.5" />
@@ -138,6 +161,31 @@ export default function ItemRow({
           </div>
         )}
       </div>
+
+      {isOwner && quickDisc && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="relative w-28">
+            <Input
+              value={quickDiscPct}
+              onChange={e => setQuickDiscPct(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleQuickDiscount()}
+              type="number"
+              min={0}
+              max={100}
+              placeholder="0"
+              className="h-8 pr-7 text-sm"
+              autoFocus
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+          </div>
+          <Button size="sm" className="h-8 px-3" onClick={handleQuickDiscount} disabled={saving}>
+            <Check className="h-3 w-3" />
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setQuickDisc(false)}>
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
 
       {participants.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">

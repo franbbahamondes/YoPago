@@ -129,7 +129,7 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
 
   return (
     <div className="min-h-screen bg-background pb-32">
-      {showJoin && <JoinDialog bill={billData} onJoined={handleJoined} />}
+      {showJoin && <JoinDialog bill={billData} participants={participants} onJoined={handleJoined} />}
 
       {/* Header */}
       <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
