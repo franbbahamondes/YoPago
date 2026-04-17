@@ -40,28 +40,48 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         blob = (await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 })) as Blob
       }
 
-      // Read image as base64 to send directly to Claude (avoids public URL dependency)
+      // Resize to max 1280px + quality 0.8 to stay well under Vercel's 4.5MB body limit
+      const resized = await new Promise<Blob>((resolve) => {
+        const img = new Image()
+        const url = URL.createObjectURL(blob)
+        img.onload = () => {
+          URL.revokeObjectURL(url)
+          const MAX = 1280
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+          const canvas = document.createElement("canvas")
+          canvas.width = Math.round(img.width * scale)
+          canvas.height = Math.round(img.height * scale)
+          canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height)
+          canvas.toBlob((b) => resolve(b ?? blob), "image/jpeg", 0.8)
+        }
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(blob) }
+        img.src = url
+      })
+
+      // Read resized image as base64 for Claude
       const base64Image = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve((reader.result as string).split(",")[1])
         reader.onerror = reject
-        reader.readAsDataURL(blob)
+        reader.readAsDataURL(resized)
       })
 
-      // Upload to Supabase Storage in parallel — doesn't block OCR
-      const supabase = createClient()
-      const path = `${bill.id}/${Date.now()}.jpg`
-      supabase.storage.from("receipts").upload(path, blob, { upsert: true }).then(({ error: upErr }) => {
-        if (upErr) { console.error("Storage upload failed:", upErr); return }
-        const { data: { publicUrl } } = supabase.storage.from("receipts").getPublicUrl(path)
-        setPreview(publicUrl)
-        supabase.from("bills").update({ imagen_url: publicUrl }).eq("id", bill.id).select().single()
-          .then(({ data: updatedBill, error: billErr }) => {
-            if (!billErr && updatedBill) onBillUpdated(updatedBill)
-          })
-      })
+      // Upload original blob to Supabase Storage in parallel (best-effort, non-blocking)
+      void (async () => {
+        try {
+          const supabase = createClient()
+          const path = `${bill.id}/${Date.now()}.jpg`
+          const { error: upErr } = await supabase.storage.from("receipts").upload(path, blob, { upsert: true })
+          if (upErr) return
+          const { data: { publicUrl } } = supabase.storage.from("receipts").getPublicUrl(path)
+          setPreview(publicUrl)
+          const { data: updatedBill, error: billErr } = await supabase
+            .from("bills").update({ imagen_url: publicUrl }).eq("id", bill.id).select().single()
+          if (!billErr && updatedBill) onBillUpdated(updatedBill)
+        } catch { /* storage errors are non-critical */ }
+      })()
 
-      // Start OCR immediately with base64
+      // Start OCR immediately with compressed base64
       setUploading(false)
       setExtracting(true)
       const distinctId = posthog.get_distinct_id()
@@ -73,8 +93,11 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         },
         body: JSON.stringify({ base64Image, billId: bill.id }),
       })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || `Error ${res.status} al procesar la imagen`)
+      }
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || "Error al procesar la imagen")
       posthog.capture("receipt_uploaded", {
         bill_id: bill.id,
         items_detected: json.items?.length ?? 0,
