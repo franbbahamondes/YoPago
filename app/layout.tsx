@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
+import { Analytics } from "@vercel/analytics/next"
 
 export const metadata: Metadata = {
   title: "YoPago — Divide la cuenta sin drama",
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="min-h-full bg-background text-foreground antialiased">
         {children}
         <Toaster richColors position="top-center" />
+        <Analytics />
       </body>
     </html>
   )
