@@ -10,7 +10,7 @@ export default function Home() {
             <Receipt className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl font-bold leading-none">YoPago</h1>
+            <h1 className="font-instrument text-2xl italic leading-none tracking-tight text-primary">yo/pago</h1>
             <p className="text-sm text-muted-foreground">Divide sin drama</p>
           </div>
         </div>
