@@ -29,6 +29,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Call Anthropic — wrapped in try/catch so network errors return clean JSON
+  const image_bytes = base64Image.length
+  const tStart = Date.now()
   let response: Response
   try {
     response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -82,23 +84,35 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error("Anthropic fetch failed:", err)
-    track(distinctId, "receipt_extraction_failed", { reason: "network_error", error: String(err) })
+    track(distinctId, "receipt_extraction_failed", {
+      reason: "network_error", error: String(err),
+      duration_anthropic_ms: Date.now() - tStart, image_bytes,
+    })
     return NextResponse.json({ error: "No se pudo conectar con el servicio de IA. Intenta de nuevo." }, { status: 503 })
   }
 
   // Handle Anthropic error responses
   if (response.status === 429) {
-    track(distinctId, "receipt_extraction_failed", { reason: "rate_limit", status: 429 })
+    track(distinctId, "receipt_extraction_failed", {
+      reason: "rate_limit", status: 429,
+      duration_anthropic_ms: Date.now() - tStart, image_bytes,
+    })
     return NextResponse.json({ error: "Demasiadas solicitudes. Espera unos segundos e intenta de nuevo." }, { status: 429 })
   }
   if (response.status === 401 || response.status === 403) {
-    track(distinctId, "receipt_extraction_failed", { reason: "auth_error", status: response.status })
+    track(distinctId, "receipt_extraction_failed", {
+      reason: "auth_error", status: response.status,
+      duration_anthropic_ms: Date.now() - tStart, image_bytes,
+    })
     return NextResponse.json({ error: "API key de Anthropic inválida." }, { status: 402 })
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => "")
     console.error(`Anthropic ${response.status}:`, detail)
-    track(distinctId, "receipt_extraction_failed", { reason: "api_error", status: response.status, detail: detail.slice(0, 300) })
+    track(distinctId, "receipt_extraction_failed", {
+      reason: "api_error", status: response.status, detail: detail.slice(0, 300),
+      duration_anthropic_ms: Date.now() - tStart, image_bytes,
+    })
     return NextResponse.json(
       { error: `Error del servicio de IA (${response.status}). Intenta de nuevo o sube la foto con mejor iluminación.` },
       { status: 500 }
@@ -121,7 +135,12 @@ export async function POST(req: NextRequest) {
     discount_amount?: number
   }[]
 
-  track(distinctId, "receipt_extraction_completed", { items_extracted: items.length })
+  const duration_anthropic_ms = Date.now() - tStart
+  track(distinctId, "receipt_extraction_completed", {
+    items_extracted: items.length,
+    duration_anthropic_ms,
+    image_bytes,
+  })
 
   return NextResponse.json({ items })
 }
