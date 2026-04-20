@@ -1,13 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { createClient } from "@/lib/supabase/client"
 import type { Item } from "@/types/database"
 import { toast } from "sonner"
-import { Plus } from "lucide-react"
 import posthog from "posthog-js"
+import { INK, INK_SOFT, MUTED, LINE } from "@/lib/design-tokens"
 
 interface Props {
   billId: string
@@ -57,24 +56,46 @@ export default function AddItemForm({ billId, nextOrden, onAdded }: Props) {
 
   if (!open) {
     return (
-      <Button variant="ghost" className="w-full justify-start gap-2 text-primary" onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" /> Agregar ítem
-      </Button>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-2.5"
+        style={{
+          height: 52, borderRadius: 16, padding: "0 14px",
+          background: "#fff", border: `1px dashed ${LINE}`,
+          color: INK, fontSize: 14, fontWeight: 600, letterSpacing: -0.1,
+        }}
+      >
+        <span
+          style={{
+            width: 22, height: 22, borderRadius: 999,
+            background: INK_SOFT, color: INK,
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontWeight: 700, fontSize: 14,
+          }}
+        >+</span>
+        Agregar ítem
+      </button>
     )
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-dashed p-3">
+    <div
+      style={{
+        background: "#fff", borderRadius: 16, padding: 12,
+        border: `1.5px solid ${INK}`,
+      }}
+    >
       <Input
         placeholder="Nombre del ítem"
         value={descripcion}
         onChange={(e) => setDescripcion(e.target.value)}
-        className="h-10"
+        className="h-10 mb-2"
         autoFocus
       />
-      <div className="flex gap-2">
+      <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: MUTED }}>$</span>
           <Input
             placeholder="Precio"
             value={precio}
@@ -93,10 +114,30 @@ export default function AddItemForm({ billId, nextOrden, onAdded }: Props) {
         />
       </div>
       <div className="flex gap-2">
-        <Button size="sm" className="flex-1" onClick={handleAdd} disabled={saving}>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={saving}
+          className="flex-1 disabled:opacity-60"
+          style={{
+            height: 44, borderRadius: 12, background: INK, color: "#fff",
+            fontSize: 14, fontWeight: 600, letterSpacing: -0.1,
+          }}
+        >
           {saving ? "Agregando…" : "Agregar"}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="px-4"
+          style={{
+            height: 44, borderRadius: 12,
+            background: "#fff", border: `1px solid ${LINE}`,
+            color: MUTED, fontSize: 13, fontWeight: 500,
+          }}
+        >
+          Cancelar
+        </button>
       </div>
     </div>
   )

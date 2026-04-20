@@ -2,14 +2,13 @@
 
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { createClient } from "@/lib/supabase/client"
 import { getClientId, setBillIdentity } from "@/lib/local-storage"
 import type { Bill, Participant } from "@/types/database"
 import { toast } from "sonner"
-import { UserPlus } from "lucide-react"
 import posthog from "posthog-js"
+import { INK, INK_SOFT, TEXT, MUTED, LINE } from "@/lib/design-tokens"
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
@@ -85,74 +84,146 @@ export default function JoinDialog({ bill, participants, onJoined }: Props) {
 
   return (
     <Dialog open>
-      <DialogContent className="max-w-sm" onPointerDownOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
-          <DialogTitle>Bienvenido/a a</DialogTitle>
-          <DialogDescription className="text-base font-semibold text-foreground">{bill.nombre}</DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        className="max-w-sm p-0 gap-0 overflow-hidden"
+        style={{ background: "#fff", borderRadius: 24 }}
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
+        <div className="p-6">
+          <DialogHeader className="space-y-2">
+            <DialogDescription
+              style={{
+                fontSize: 11, fontWeight: 600, color: MUTED,
+                textTransform: "uppercase", letterSpacing: 1.4,
+              }}
+            >
+              Bienvenido/a
+            </DialogDescription>
+            <DialogTitle
+              style={{
+                fontFamily: "'Instrument Serif', ui-serif, Georgia, serif",
+                fontSize: 28, fontWeight: 700, letterSpacing: -0.7,
+                lineHeight: 1.05, color: TEXT,
+              }}
+            >
+              {bill.nombre}
+            </DialogTitle>
+          </DialogHeader>
 
-        <div className="space-y-4 pt-2">
-          {!showOther ? (
-            <>
-              {unclaimedParticipants.length > 0 && (
-                <div>
-                  <p className="mb-3 text-sm text-muted-foreground">¿Quién eres?</p>
-                  <div className="flex flex-wrap gap-2">
-                    {unclaimedParticipants.map(p => (
-                      <button
-                        key={p.id}
-                        disabled={loading}
-                        onClick={() => claimParticipant(p)}
-                        className="rounded-full border-2 border-primary bg-primary/10 px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
-                      >
-                        {p.nombre}
-                      </button>
-                    ))}
-                    {claimedByOthers.map(p => (
-                      <span
-                        key={p.id}
-                        title="Ya reclamado"
-                        className="cursor-not-allowed rounded-full border-2 border-muted bg-muted/30 px-4 py-2 text-sm font-medium text-muted-foreground line-through"
-                      >
-                        {p.nombre}
-                      </span>
-                    ))}
+          <div className="space-y-4 pt-4">
+            {!showOther ? (
+              <>
+                {unclaimedParticipants.length > 0 && (
+                  <div>
+                    <p className="mb-3" style={{ fontSize: 13, color: MUTED, letterSpacing: -0.05 }}>
+                      ¿Quién eres?
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {unclaimedParticipants.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={loading}
+                          onClick={() => claimParticipant(p)}
+                          className="disabled:opacity-60"
+                          style={{
+                            padding: "9px 16px", borderRadius: 999,
+                            background: INK_SOFT,
+                            border: `1.5px solid ${INK}`,
+                            color: INK, fontSize: 14, fontWeight: 600, letterSpacing: -0.05,
+                          }}
+                        >
+                          {p.nombre}
+                        </button>
+                      ))}
+                      {claimedByOthers.map(p => (
+                        <span
+                          key={p.id}
+                          title="Ya reclamado"
+                          style={{
+                            padding: "9px 16px", borderRadius: 999,
+                            background: "#fff",
+                            border: `1px solid ${LINE}`,
+                            color: MUTED, fontSize: 14, fontWeight: 500,
+                            textDecoration: "line-through", cursor: "not-allowed",
+                          }}
+                        >
+                          {p.nombre}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <Button
-                variant="ghost"
-                className="w-full gap-2 text-muted-foreground"
-                onClick={() => setShowOther(true)}
-              >
-                <UserPlus className="h-4 w-4" />
-                No estoy en la lista
-              </Button>
-            </>
-          ) : (
-            <>
-              <div>
-                <p className="mb-2 text-sm text-muted-foreground">¿Cómo te llamas?</p>
-                <Input
-                  placeholder="Tu nombre"
-                  value={otherName}
-                  onChange={(e) => setOtherName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && joinAsOther()}
-                  className="h-11"
-                  autoFocus
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button variant="ghost" className="flex-1" onClick={() => setShowOther(false)} disabled={loading}>
-                  Volver
-                </Button>
-                <Button className="flex-1 h-11" onClick={joinAsOther} disabled={loading}>
-                  {loading ? "Entrando…" : "Entrar"}
-                </Button>
-              </div>
-            </>
-          )}
+                <button
+                  type="button"
+                  onClick={() => setShowOther(true)}
+                  className="w-full inline-flex items-center justify-center gap-2"
+                  style={{
+                    height: 44, borderRadius: 12,
+                    background: "#fff", border: `1px dashed ${LINE}`,
+                    color: MUTED, fontSize: 14, fontWeight: 500, letterSpacing: -0.05,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M7 3v8M3 7h8" stroke={MUTED} strokeWidth="1.6" strokeLinecap="round"/>
+                  </svg>
+                  No estoy en la lista
+                </button>
+              </>
+            ) : (
+              <>
+                <div>
+                  <p
+                    className="mb-2"
+                    style={{
+                      fontSize: 11, fontWeight: 600, color: MUTED,
+                      textTransform: "uppercase", letterSpacing: 1.4,
+                    }}
+                  >
+                    ¿Cómo te llamas?
+                  </p>
+                  <Input
+                    placeholder="Tu nombre"
+                    value={otherName}
+                    onChange={(e) => setOtherName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && joinAsOther()}
+                    className="h-12"
+                    style={{ borderRadius: 12, borderColor: LINE, fontSize: 16 }}
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowOther(false)}
+                    disabled={loading}
+                    className="flex-1 disabled:opacity-60"
+                    style={{
+                      height: 48, borderRadius: 12,
+                      background: "#fff", border: `1px solid ${LINE}`,
+                      color: MUTED, fontSize: 14, fontWeight: 500, letterSpacing: -0.05,
+                    }}
+                  >
+                    Volver
+                  </button>
+                  <button
+                    type="button"
+                    onClick={joinAsOther}
+                    disabled={loading}
+                    className="flex-1 disabled:opacity-60"
+                    style={{
+                      height: 48, borderRadius: 12, background: INK, color: "#fff",
+                      fontSize: 15, fontWeight: 600, letterSpacing: -0.1,
+                      boxShadow: "0 8px 20px -8px rgba(55,48,163,0.5)",
+                    }}
+                  >
+                    {loading ? "Entrando…" : "Entrar"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

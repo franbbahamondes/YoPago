@@ -1,13 +1,12 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/client"
 import type { Bill, Item } from "@/types/database"
 import { toast } from "sonner"
-import { Camera, Loader2, X, Check } from "lucide-react"
 import posthog from "posthog-js"
+import { formatCLP } from "@/lib/format"
+import { INK, INK_SOFT, TEXT, MUTED, LINE } from "@/lib/design-tokens"
 
 interface ExtractedItem {
   name: string
@@ -29,6 +28,7 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
   const [preview, setPreview] = useState<string | null>(bill.imagen_url)
   const [extracted, setExtracted] = useState<ExtractedItem[] | null>(null)
   const [saving, setSaving] = useState(false)
+  const busy = uploading || extracting
 
   const handleFile = async (file: File) => {
     setUploading(true)
@@ -139,63 +139,162 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
     finally { setSaving(false) }
   }
 
+  // ── Compact state: boleta already uploaded, no pending review ───────────
   if (bill.imagen_url && !extracted) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border p-2 text-sm text-muted-foreground">
-        <Camera className="h-4 w-4 shrink-0" />
-        <span className="flex-1 truncate">Boleta subida</span>
-        <Button variant="ghost" size="sm" onClick={() => inputRef.current?.click()}>
+      <div
+        className="flex items-center gap-2 rounded-2xl px-3 py-2 text-sm"
+        style={{ background: "#fff", border: `1px solid ${LINE}`, color: MUTED }}
+      >
+        <CameraIcon />
+        <span className="flex-1 truncate" style={{ color: TEXT }}>Boleta subida</span>
+        <button
+          onClick={() => inputRef.current?.click()}
+          className="rounded-full px-3 py-1 text-xs font-semibold"
+          style={{ background: INK_SOFT, color: INK }}
+        >
           Cambiar
-        </Button>
+        </button>
         <input ref={inputRef} type="file" accept="image/*,.heic" className="hidden" onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
       </div>
     )
   }
 
+  // ── Review state: items extracted, user confirms ────────────────────────
   if (extracted) {
+    const subtotal = extracted.reduce((s, it) => s + it.quantity * it.price, 0)
     return (
-      <Card className="border-green-200 bg-green-50">
-        <CardContent className="p-4 space-y-3">
-          <p className="text-sm font-semibold text-green-800">
-            {extracted.length} ítems detectados en la boleta:
-          </p>
-          <ul className="space-y-1 max-h-48 overflow-y-auto">
-            {extracted.map((it, i) => (
-              <li key={i} className="flex justify-between text-sm">
-                <span className="text-green-900 flex-1 truncate">{it.name}</span>
-                <span className="text-green-700 ml-2 shrink-0">
-                  {it.quantity > 1 ? `${it.quantity}× ` : ""}${it.price.toLocaleString("es-CL")}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div className="flex gap-2">
-            <Button size="sm" className="flex-1 gap-1.5" onClick={handleConfirmItems} disabled={saving}>
-              <Check className="h-4 w-4" /> {saving ? "Guardando…" : "Confirmar ítems"}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setExtracted(null)}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        <div
+          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
+          style={{
+            background: "#ECFDF5",
+            border: "1px solid #10B98133",
+            color: "#047857",
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: 1.2,
+            textTransform: "uppercase",
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke="#047857" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          Listo
+        </div>
+        <h3
+          style={{
+            fontFamily: "'Instrument Serif', ui-serif, Georgia, serif",
+            fontSize: 26, fontWeight: 700, letterSpacing: -0.6,
+            lineHeight: 1.05, color: TEXT,
+          }}
+        >
+          Encontramos<br/>{extracted.length} ítems
+        </h3>
+        <p className="text-sm" style={{ color: MUTED, letterSpacing: -0.05 }}>
+          Revísalos y confírmalos para agregarlos a la cuenta.
+        </p>
+
+        <div
+          className="overflow-hidden"
+          style={{ background: "#fff", borderRadius: 18, border: `1px solid ${LINE}` }}
+        >
+          {extracted.map((it, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 px-4 py-3"
+              style={{ borderBottom: i < extracted.length - 1 ? `1px solid ${LINE}` : "none" }}
+            >
+              <div className="flex-1 min-w-0">
+                <div
+                  className="truncate"
+                  style={{ fontSize: 15, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}
+                >{it.name}</div>
+                <div className="mt-0.5" style={{ fontSize: 12, color: MUTED }}>
+                  {it.quantity > 1 ? `${it.quantity} × ${formatCLP(it.price)}` : "1 unidad"}
+                </div>
+              </div>
+              <div
+                style={{
+                  fontSize: 15, fontWeight: 600, color: TEXT, letterSpacing: -0.2,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >{formatCLP(it.quantity * it.price)}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between px-2 pt-1">
+          <span style={{ fontSize: 13, color: MUTED }}>Subtotal detectado</span>
+          <span
+            style={{
+              fontSize: 17, fontWeight: 700, color: TEXT, letterSpacing: -0.3,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >{formatCLP(subtotal)}</span>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={handleConfirmItems}
+            disabled={saving}
+            className="flex-1 disabled:opacity-60"
+            style={{
+              height: 52, borderRadius: 14, background: INK, color: "#fff",
+              fontSize: 15, fontWeight: 600, letterSpacing: -0.1,
+              boxShadow: "0 8px 20px -8px rgba(55,48,163,0.5)",
+            }}
+          >
+            {saving ? "Guardando…" : "Confirmar y asignar"}
+          </button>
+          <button
+            onClick={() => setExtracted(null)}
+            className="px-4"
+            style={{
+              height: 52, borderRadius: 14, background: "#fff",
+              border: `1px solid ${LINE}`, color: MUTED,
+              fontSize: 14, fontWeight: 500,
+            }}
+          >
+            Descartar
+          </button>
+        </div>
+      </div>
     )
   }
 
+  // ── Default state: big dashed upload zone ──────────────────────────────
   return (
-    <button
-      onClick={() => inputRef.current?.click()}
-      disabled={uploading || extracting}
-      className="flex w-full items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-50"
-    >
-      {uploading || extracting ? (
-        <Loader2 className="h-5 w-5 animate-spin shrink-0" />
-      ) : (
-        <Camera className="h-5 w-5 shrink-0" />
-      )}
-      <span>
-        {uploading ? "Subiendo imagen…" : extracting ? "Procesando boleta con IA…" : "Subir foto de la boleta (opcional)"}
-      </span>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        className="flex w-full flex-col items-center justify-center gap-3.5 disabled:opacity-70"
+        style={{
+          height: 260,
+          borderRadius: 20,
+          border: `2px dashed ${INK}66`,
+          background: "#fff",
+        }}
+      >
+        <div
+          style={{
+            width: 60, height: 60, borderRadius: 18, background: INK_SOFT,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <path d="M4 7h3l2-2h6l2 2h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1z" stroke={INK} strokeWidth="1.8" strokeLinejoin="round"/>
+            <circle cx="12" cy="13" r="3.5" stroke={INK} strokeWidth="1.8"/>
+          </svg>
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, letterSpacing: -0.3 }}>
+          {busy ? "Procesando…" : "Toca para subir la boleta"}
+        </div>
+        <div style={{ fontSize: 12, color: MUTED, letterSpacing: -0.05 }}>
+          {busy ? "Espera un segundo" : "Foto o imagen de la galería"}
+        </div>
+      </button>
+
       <input
         ref={inputRef}
         type="file"
@@ -203,6 +302,63 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         className="hidden"
         onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
       />
-    </button>
+
+      {/* Processing banner overlay — dark toast with spinner + progress */}
+      {busy && (
+        <div
+          className="absolute left-2 right-2 bottom-2 flex items-center gap-3 px-4"
+          style={{
+            background: TEXT,
+            color: "#fff",
+            borderRadius: 16,
+            padding: "12px 14px",
+            boxShadow: "0 16px 40px rgba(0,0,0,0.3)",
+          }}
+        >
+          <div
+            style={{
+              width: 20, height: 20,
+              border: "2px solid rgba(255,255,255,0.25)",
+              borderTopColor: "#fff", borderRadius: "50%",
+              animation: "yp-spin 1s linear infinite", flexShrink: 0,
+            }}
+          />
+          <div className="flex-1 min-w-0">
+            <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: -0.1 }}>
+              {uploading ? "Subiendo imagen…" : "Procesando boleta…"}
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", marginTop: 2 }}>
+              {uploading ? "Preparando" : "Leyendo ítems con IA"}
+            </div>
+            <div
+              className="mt-2"
+              style={{ height: 3, background: "rgba(255,255,255,0.15)", borderRadius: 2, overflow: "hidden" }}
+            >
+              <div
+                style={{
+                  height: "100%", background: INK_SOFT, borderRadius: 2,
+                  width: extracting ? "70%" : "28%",
+                  transition: "width 0.8s ease",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Keyframes for spin — local to component so we don't touch globals.css */}
+      <style jsx>{`
+        @keyframes yp-spin { to { transform: rotate(360deg); } }
+      `}</style>
+    </div>
+  )
+}
+
+function CameraIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0">
+      <path d="M4 7h3l2-2h6l2 2h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1z" stroke={TEXT} strokeWidth="1.6" strokeLinejoin="round"/>
+      <circle cx="12" cy="13" r="3.5" stroke={TEXT} strokeWidth="1.6"/>
+    </svg>
   )
 }
