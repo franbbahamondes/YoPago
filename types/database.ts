@@ -6,15 +6,23 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type DatosTransferencia = {
+/**
+ * Datos de transferencia completos (5 requeridos + 2 opcionales).
+ * Solo se renderiza/comparte cuando los 5 requeridos están presentes
+ * — la validación vive en lib/transfer-data.ts.
+ */
+export type TransferData = {
   nombre: string
+  rut: string
   banco: string
   tipo_cuenta: string
   numero: string
-  rut: string
-  email: string
-  alias: string
+  email?: string | null
+  alias?: string | null
 }
+
+/** @deprecated — usar TransferData. Se mantiene por compat con código legacy. */
+export type DatosTransferencia = TransferData
 
 export type Database = {
   __InternalSupabase: {
@@ -28,6 +36,7 @@ export type Database = {
           slug: string
           nombre: string
           creador_nombre: string | null
+          /** @deprecated — los datos viven en la tabla transfer_data. Columna existe solo para migración legacy. */
           datos_transferencia: Json | null
           imagen_url: string | null
           tip_percent: number
@@ -62,6 +71,55 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      transfer_data: {
+        Row: {
+          id: string
+          bill_id: string
+          nombre: string | null
+          rut: string | null
+          banco: string | null
+          tipo_cuenta: string | null
+          numero: string | null
+          email: string | null
+          alias: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          bill_id: string
+          nombre?: string | null
+          rut?: string | null
+          banco?: string | null
+          tipo_cuenta?: string | null
+          numero?: string | null
+          email?: string | null
+          alias?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          bill_id?: string
+          nombre?: string | null
+          rut?: string | null
+          banco?: string | null
+          tipo_cuenta?: string | null
+          numero?: string | null
+          email?: string | null
+          alias?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transfer_data_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: true
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       participants: {
         Row: {
@@ -182,3 +240,4 @@ export type Bill = Database["public"]["Tables"]["bills"]["Row"]
 export type Participant = Database["public"]["Tables"]["participants"]["Row"]
 export type Item = Database["public"]["Tables"]["items"]["Row"]
 export type ItemAssignment = Database["public"]["Tables"]["item_assignments"]["Row"]
+export type TransferDataRow = Database["public"]["Tables"]["transfer_data"]["Row"]

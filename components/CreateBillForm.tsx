@@ -12,15 +12,10 @@ import {
   getClientId,
   setBillIdentity,
 } from "@/lib/local-storage"
-import type { Json, DatosTransferencia } from "@/types/database"
+import { transferStatus } from "@/lib/transfer-data"
+import TransferFields, { EMPTY_TRANSFER, type TransferFieldsValue } from "@/components/TransferFields"
+import { FieldLabel, UnderlineInput } from "@/components/form-primitives"
 import { toast } from "sonner"
-
-const BANCOS = [
-  "Banco de Chile", "BancoEstado", "Santander", "BCI", "Itaú", "Scotiabank",
-  "BICE", "Falabella", "Ripley", "Consorcio", "Security", "Internacional",
-  "Coopeuch", "Otro",
-]
-const TIPOS_CUENTA = ["Cuenta Vista", "Cuenta Corriente", "Cuenta RUT", "Cuenta de Ahorro"]
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
@@ -42,24 +37,20 @@ export default function CreateBillForm() {
   const [otrosParticipantes, setOtrosParticipantes] = useState<string[]>([])
   const [nuevoInvitado, setNuevoInvitado] = useState("")
 
-  const [creadorNombre, setCreadorNombre] = useState("")
-  const [banco, setBanco] = useState("")
-  const [tipoCuenta, setTipoCuenta] = useState("")
-  const [numero, setNumero] = useState("")
-  const [rut, setRut] = useState("")
-  const [email, setEmail] = useState("")
-  const [alias, setAlias] = useState("")
+  const [transfer, setTransfer] = useState<TransferFieldsValue>(EMPTY_TRANSFER)
 
   useEffect(() => {
     const saved = getSavedBank()
     if (saved) {
-      setCreadorNombre(saved.nombre)
-      setBanco(saved.banco)
-      setTipoCuenta(saved.tipo_cuenta)
-      setNumero(saved.numero)
-      setRut(saved.rut)
-      setEmail(saved.email)
-      setAlias(saved.alias)
+      setTransfer({
+        nombre: saved.nombre,
+        rut: saved.rut,
+        banco: saved.banco,
+        tipo_cuenta: saved.tipo_cuenta,
+        numero: saved.numero,
+        email: saved.email ?? "",
+        alias: saved.alias ?? "",
+      })
     }
   }, [])
 
@@ -75,13 +66,20 @@ export default function CreateBillForm() {
   const eliminarInvitado = (i: number) =>
     setOtrosParticipantes((p) => p.filter((_, idx) => idx !== i))
 
-  const crearCuenta = async () => {
+  const crearCuenta = async (overrideTransfer?: TransferFieldsValue) => {
     if (!nombre.trim()) {
       toast.error("Ponle un nombre al evento")
       setStep(1)
       return
     }
-    const creadorName = creadorNombre.trim() || "Yo"
+    const t = overrideTransfer ?? transfer
+    const status = transferStatus(t)
+    if (status === "partial") {
+      toast.error("Completa todos los datos de transferencia o déjalos en blanco")
+      return
+    }
+
+    const creadorName = t.nombre.trim() || "Yo"
     const otros = otrosParticipantes.map((p) => p.trim()).filter(Boolean)
 
     setSaving(true)
@@ -90,23 +88,12 @@ export default function CreateBillForm() {
       const slug = generateSlug()
       const clientId = getClientId()
 
-      const datosTransferencia: DatosTransferencia = {
-        nombre: creadorNombre.trim(),
-        banco: banco.trim(),
-        tipo_cuenta: tipoCuenta.trim(),
-        numero: numero.trim(),
-        rut: rut.trim(),
-        email: email.trim(),
-        alias: alias.trim(),
-      }
-
       const { data: bill, error } = await supabase
         .from("bills")
         .insert({
           slug,
           nombre: nombre.trim(),
-          creador_nombre: creadorNombre.trim() || null,
-          datos_transferencia: datosTransferencia as unknown as Json,
+          creador_nombre: t.nombre.trim() || null,
         })
         .select()
         .single()
@@ -126,19 +113,46 @@ export default function CreateBillForm() {
         if (otrosErr) throw otrosErr
       }
 
-      saveBank(datosTransferencia)
+      if (status === "complete") {
+        const { error: tErr } = await supabase.from("transfer_data").insert({
+          bill_id: bill.id,
+          nombre: t.nombre.trim(),
+          rut: t.rut.trim(),
+          banco: t.banco.trim(),
+          tipo_cuenta: t.tipo_cuenta.trim(),
+          numero: t.numero.trim(),
+          email: t.email.trim() || null,
+          alias: t.alias.trim() || null,
+        })
+        if (tErr) {
+          // No bloquear la creación — el usuario puede agregar los datos después vía edit flow.
+          console.error("transfer_data insert failed:", tErr)
+          posthog.capture("transfer_data_insert_failed", { bill_slug: slug, error: tErr.message })
+        } else {
+          saveBank({
+            nombre: t.nombre.trim(),
+            rut: t.rut.trim(),
+            banco: t.banco.trim(),
+            tipo_cuenta: t.tipo_cuenta.trim(),
+            numero: t.numero.trim(),
+            email: t.email.trim() || undefined,
+            alias: t.alias.trim() || undefined,
+          })
+        }
+      }
+
       addOwnedBill(slug)
       setBillIdentity(slug, { participantId: creadorParticipant.id, name: creadorName })
 
       posthog.identify(clientId, {
         name: creadorName,
-        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(t.email.trim() ? { email: t.email.trim() } : {}),
       })
       posthog.capture("bill_created", {
         bill_slug: slug,
         event_name: nombre.trim(),
         participant_count: 1 + otros.length,
-        has_transfer_data: !!(banco.trim() || numero.trim()),
+        has_transfer_data: status === "complete",
         has_pre_registered_participants: otros.length > 0,
         marketing_opt_in: true,
       })
@@ -159,8 +173,8 @@ export default function CreateBillForm() {
         <EventName
           nombre={nombre}
           setNombre={setNombre}
-          creadorNombre={creadorNombre}
-          setCreadorNombre={setCreadorNombre}
+          tuNombre={transfer.nombre}
+          setTuNombre={(v) => setTransfer({ ...transfer, nombre: v })}
           onBack={back}
           onContinue={() => {
             if (!nombre.trim()) {
@@ -184,20 +198,14 @@ export default function CreateBillForm() {
       )}
       {step === 3 && (
         <Transfer
-          creadorNombre={creadorNombre} setCreadorNombre={setCreadorNombre}
-          rut={rut} setRut={setRut}
-          banco={banco} setBanco={setBanco}
-          tipoCuenta={tipoCuenta} setTipoCuenta={setTipoCuenta}
-          numero={numero} setNumero={setNumero}
+          value={transfer}
+          onChange={setTransfer}
           saving={saving}
           onBack={back}
-          onSubmit={crearCuenta}
+          onSubmit={() => crearCuenta()}
           onSkip={() => {
-            setBanco("")
-            setTipoCuenta("")
-            setNumero("")
-            setRut("")
-            crearCuenta()
+            setTransfer(EMPTY_TRANSFER)
+            crearCuenta(EMPTY_TRANSFER)
           }}
         />
       )}
@@ -380,123 +388,6 @@ function Subtitle({ children }: { children: ReactNode }) {
   )
 }
 
-function FieldLabel({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        fontSize: 12,
-        fontWeight: 600,
-        color: MUTED,
-        textTransform: "uppercase",
-        letterSpacing: 1,
-        marginBottom: 10,
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function UnderlineInput({
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  inputMode,
-  autoFocus,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  type?: string
-  inputMode?: "text" | "numeric" | "email" | "tel"
-  autoFocus?: boolean
-}) {
-  const focused = value.length > 0 || autoFocus
-  return (
-    <input
-      type={type}
-      inputMode={inputMode}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      autoFocus={autoFocus}
-      className="w-full bg-transparent outline-none"
-      style={{
-        borderBottom: `2px solid ${focused ? INK : TEXT}`,
-        padding: "0 0 12px 0",
-        fontSize: 22,
-        fontWeight: 600,
-        color: TEXT,
-        letterSpacing: -0.4,
-        lineHeight: 1.2,
-      }}
-    />
-  )
-}
-
-function UnderlineSelect({
-  value,
-  onChange,
-  placeholder,
-  options,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  options: string[]
-}) {
-  const focused = !!value
-  return (
-    <div
-      style={{
-        position: "relative",
-        borderBottom: `2px solid ${focused ? INK : TEXT}`,
-        paddingBottom: 12,
-      }}
-    >
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none bg-transparent outline-none"
-        style={{
-          border: "none",
-          padding: 0,
-          fontSize: 22,
-          fontWeight: 600,
-          color: value ? TEXT : MUTED,
-          letterSpacing: -0.4,
-          lineHeight: 1.2,
-        }}
-      >
-        <option value="">{placeholder || "Selecciona…"}</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
-      <div
-        style={{
-          position: "absolute",
-          right: 0,
-          top: 8,
-          pointerEvents: "none",
-        }}
-      >
-        <svg width="12" height="8" viewBox="0 0 12 8">
-          <path
-            d="M1 1l5 5 5-5"
-            stroke={MUTED}
-            strokeWidth="1.5"
-            fill="none"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
-    </div>
-  )
-}
 
 // ─────────────────────────────────────────────
 // Step 0 — Welcome (combined: bienvenida + cómo funciona)
@@ -693,15 +584,15 @@ function TransferPreview() {
 function EventName({
   nombre,
   setNombre,
-  creadorNombre,
-  setCreadorNombre,
+  tuNombre,
+  setTuNombre,
   onBack,
   onContinue,
 }: {
   nombre: string
   setNombre: (v: string) => void
-  creadorNombre: string
-  setCreadorNombre: (v: string) => void
+  tuNombre: string
+  setTuNombre: (v: string) => void
   onBack: () => void
   onContinue: () => void
 }) {
@@ -727,8 +618,8 @@ function EventName({
       <div className="mt-7">
         <FieldLabel>Tu nombre</FieldLabel>
         <UnderlineInput
-          value={creadorNombre}
-          onChange={setCreadorNombre}
+          value={tuNombre}
+          onChange={setTuNombre}
           placeholder="Juan"
         />
       </div>
@@ -948,31 +839,24 @@ function Invitees({
 // ─────────────────────────────────────────────
 
 function Transfer({
-  creadorNombre, setCreadorNombre,
-  rut, setRut,
-  banco, setBanco,
-  tipoCuenta, setTipoCuenta,
-  numero, setNumero,
+  value,
+  onChange,
   saving,
   onBack,
   onSubmit,
   onSkip,
 }: {
-  creadorNombre: string
-  setCreadorNombre: (v: string) => void
-  rut: string
-  setRut: (v: string) => void
-  banco: string
-  setBanco: (v: string) => void
-  tipoCuenta: string
-  setTipoCuenta: (v: string) => void
-  numero: string
-  setNumero: (v: string) => void
+  value: TransferFieldsValue
+  onChange: (next: TransferFieldsValue) => void
   saving: boolean
   onBack: () => void
   onSubmit: () => void
   onSkip: () => void
 }) {
+  const status = transferStatus(value)
+  const isPartial = status === "partial"
+  const canSubmit = !saving && !isPartial
+
   return (
     <div className="flex min-h-[calc(100vh-5rem)] flex-col">
       <NavRow step={3} total={4} onBack={onBack} onSkip={onSkip} />
@@ -1002,43 +886,30 @@ function Transfer({
         Los compartimos al final para que tus amigos te transfieran sin pedirlos.
       </Subtitle>
 
-      <div className="mt-8 flex flex-col gap-5">
-        <div>
-          <FieldLabel>Nombre</FieldLabel>
-          <UnderlineInput value={creadorNombre} onChange={setCreadorNombre} placeholder="Juan Alcayaga" />
-        </div>
-        <div>
-          <FieldLabel>RUT</FieldLabel>
-          <UnderlineInput value={rut} onChange={setRut} placeholder="12.345.678-9" />
-        </div>
-        <div>
-          <FieldLabel>Banco</FieldLabel>
-          <UnderlineSelect
-            value={banco}
-            onChange={setBanco}
-            options={BANCOS}
-            placeholder="Selecciona…"
-          />
-        </div>
-        <div className="flex gap-4">
-          <div style={{ flex: 1 }}>
-            <FieldLabel>Tipo de cuenta</FieldLabel>
-            <UnderlineSelect
-              value={tipoCuenta}
-              onChange={setTipoCuenta}
-              options={TIPOS_CUENTA}
-              placeholder="—"
-            />
-          </div>
-          <div style={{ flex: 1.4 }}>
-            <FieldLabel>Nº de cuenta</FieldLabel>
-            <UnderlineInput value={numero} onChange={setNumero} inputMode="numeric" placeholder="00123456789" />
-          </div>
-        </div>
+      <div className="mt-8">
+        <TransferFields value={value} onChange={onChange} hideOptional />
       </div>
 
+      {isPartial && (
+        <div
+          className="mt-5"
+          style={{
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "#FEF3C7",
+            border: "1px solid #F59E0B55",
+            color: "#92400E",
+            fontSize: 13,
+            lineHeight: 1.45,
+            letterSpacing: -0.1,
+          }}
+        >
+          Completa <b>nombre</b>, <b>RUT</b>, <b>banco</b>, <b>tipo</b> y <b>número</b> — o déjalos todos en blanco para omitir.
+        </div>
+      )}
+
       <div className="mt-auto pt-10">
-        <PrimaryButton onClick={onSubmit} disabled={saving}>
+        <PrimaryButton onClick={onSubmit} disabled={!canSubmit}>
           {saving ? "Creando…" : "Guardar y terminar"}
         </PrimaryButton>
       </div>
