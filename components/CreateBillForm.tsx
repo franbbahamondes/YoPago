@@ -887,7 +887,7 @@ function Transfer({
       </Subtitle>
 
       <div className="mt-8">
-        <TransferFields value={value} onChange={onChange} hideOptional />
+        <TransferFields value={value} onChange={onChange} />
       </div>
 
       {isPartial && (

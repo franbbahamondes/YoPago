@@ -25,11 +25,9 @@ export const EMPTY_TRANSFER: TransferFieldsValue = {
 export default function TransferFields({
   value,
   onChange,
-  hideOptional = false,
 }: {
   value: TransferFieldsValue
   onChange: (next: TransferFieldsValue) => void
-  hideOptional?: boolean
 }) {
   const set = <K extends keyof TransferFieldsValue>(k: K) => (v: string) =>
     onChange({ ...value, [k]: v })
@@ -58,18 +56,14 @@ export default function TransferFields({
           <UnderlineInput value={value.numero} onChange={set("numero")} inputMode="numeric" placeholder="00123456789" />
         </div>
       </div>
-      {!hideOptional && (
-        <>
-          <div>
-            <FieldLabel>Email (opcional)</FieldLabel>
-            <UnderlineInput value={value.email} onChange={set("email")} type="email" inputMode="email" placeholder="tucorreo@ejemplo.com" />
-          </div>
-          <div>
-            <FieldLabel>Alias (opcional)</FieldLabel>
-            <UnderlineInput value={value.alias} onChange={set("alias")} placeholder="opcional" />
-          </div>
-        </>
-      )}
+      <div>
+        <FieldLabel>Email (opcional)</FieldLabel>
+        <UnderlineInput value={value.email} onChange={set("email")} type="email" inputMode="email" placeholder="tucorreo@ejemplo.com" />
+      </div>
+      <div>
+        <FieldLabel>Alias (opcional)</FieldLabel>
+        <UnderlineInput value={value.alias} onChange={set("alias")} placeholder="opcional" />
+      </div>
     </div>
   )
 }
