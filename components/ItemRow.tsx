@@ -9,6 +9,7 @@ import { itemEffectiveTotal } from "@/lib/totals"
 import { INK, TEXT, MUTED, LINE } from "@/lib/design-tokens"
 import type { Item, Participant, ItemAssignment } from "@/types/database"
 import { toast } from "sonner"
+import posthog from "posthog-js"
 
 interface Props {
   item: Item
@@ -60,6 +61,11 @@ export default function ItemRow({
         .select()
         .single()
       if (error) throw error
+      posthog.capture("item_updated", {
+        bill_id: item.bill_id,
+        item_id: item.id,
+        is_owner: isOwner,
+      })
       onUpdated(data)
       setEditing(false)
     } catch { toast.error("No se pudo guardar") }
@@ -71,6 +77,11 @@ export default function ItemRow({
     try {
       const supabase = createClient()
       await supabase.from("items").delete().eq("id", item.id)
+      posthog.capture("item_deleted", {
+        bill_id: item.bill_id,
+        item_id: item.id,
+        is_owner: isOwner,
+      })
       onDeleted(item.id)
     } catch { toast.error("No se pudo eliminar") }
   }
@@ -184,24 +195,22 @@ export default function ItemRow({
             <span className="line-through opacity-40" style={{ fontSize: 12, color: MUTED }}>{formatCLP(gross)}</span>
           )}
           <span>{formatCLP(effective)}</span>
-          {isOwner && (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              aria-label="Editar"
-              className="shrink-0"
-              style={{
-                width: 28, height: 28, borderRadius: 999,
-                background: "#F3F4F6",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                marginLeft: 4,
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-                <path d="M2 10.5L10 2.5l1.5 1.5L3.5 12H2v-1.5z" stroke={MUTED} strokeWidth="1.4" strokeLinejoin="round"/>
-              </svg>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            aria-label="Editar"
+            className="shrink-0"
+            style={{
+              width: 28, height: 28, borderRadius: 999,
+              background: "#F3F4F6",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              marginLeft: 4,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path d="M2 10.5L10 2.5l1.5 1.5L3.5 12H2v-1.5z" stroke={MUTED} strokeWidth="1.4" strokeLinejoin="round"/>
+            </svg>
+          </button>
         </div>
       </div>
 

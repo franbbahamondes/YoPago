@@ -25,13 +25,14 @@ export default async function BillPage({ params }: { params: Promise<{ slug: str
 
   if (!bill) notFound()
 
-  const [{ data: items }, { data: participants }, { data: assignments }] = await Promise.all([
+  const [{ data: items }, { data: participants }, { data: assignments }, { data: transferData }] = await Promise.all([
     supabase.from("items").select("*").eq("bill_id", bill.id).order("orden"),
     supabase.from("participants").select("*").eq("bill_id", bill.id).order("created_at"),
     supabase.from("item_assignments").select("*").in(
       "item_id",
       (await supabase.from("items").select("id").eq("bill_id", bill.id)).data?.map(i => i.id) ?? []
     ),
+    supabase.from("transfer_data").select("*").eq("bill_id", bill.id).maybeSingle(),
   ])
 
   return (
@@ -40,6 +41,7 @@ export default async function BillPage({ params }: { params: Promise<{ slug: str
       initialItems={items ?? []}
       initialParticipants={participants ?? []}
       initialAssignments={assignments ?? []}
+      initialTransferData={transferData ?? null}
     />
   )
 }

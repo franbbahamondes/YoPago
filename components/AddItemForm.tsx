@@ -11,10 +11,11 @@ import { INK, INK_SOFT, MUTED, LINE } from "@/lib/design-tokens"
 interface Props {
   billId: string
   nextOrden: number
+  isOwner: boolean
   onAdded: (item: Item) => void
 }
 
-export default function AddItemForm({ billId, nextOrden, onAdded }: Props) {
+export default function AddItemForm({ billId, nextOrden, isOwner, onAdded }: Props) {
   const [open, setOpen] = useState(false)
   const [descripcion, setDescripcion] = useState("")
   const [precio, setPrecio] = useState("")
@@ -39,6 +40,7 @@ export default function AddItemForm({ billId, nextOrden, onAdded }: Props) {
         item_name: descripcion.trim(),
         price: p,
         quantity: parseInt(cantidad) || 1,
+        is_owner: isOwner,
       })
       onAdded(data)
       setDescripcion("")

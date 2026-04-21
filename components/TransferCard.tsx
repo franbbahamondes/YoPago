@@ -1,34 +1,37 @@
 "use client"
 
 import { useState } from "react"
-import type { DatosTransferencia } from "@/types/database"
+import type { TransferData } from "@/types/database"
 import { toast } from "sonner"
 import posthog from "posthog-js"
 import { formatCLP } from "@/lib/format"
 import { INK, INK_SOFT, INK_DEEP, TEXT, MUTED, LINE } from "@/lib/design-tokens"
 
 interface Props {
-  datos: DatosTransferencia
+  datos: TransferData
   billNombre?: string
   amount?: number
   shareUrl?: string
+  onEdit?: () => void
 }
 
-export default function TransferCard({ datos, billNombre, amount, shareUrl }: Props) {
+export default function TransferCard({ datos, billNombre, amount, shareUrl, onEdit }: Props) {
   type Field = { label: string; value: string; copy: boolean }
-  const fields: Field[] = (
-    [
-      { label: "Nombre",       value: datos.nombre,      copy: false },
-      { label: "RUT",          value: datos.rut,         copy: true  },
-      { label: "Banco",        value: datos.banco,       copy: false },
-      { label: "Tipo",         value: datos.tipo_cuenta, copy: false },
-      { label: "N° de cuenta", value: datos.numero,      copy: true  },
-      { label: "Email",        value: datos.email,       copy: true  },
-      { label: "Alias",        value: datos.alias,       copy: true  },
-    ] as const
-  )
-    .filter(f => typeof f.value === "string" && f.value.length > 0)
-    .map(f => ({ label: f.label, value: f.value as string, copy: f.copy }))
+  // Los 5 requeridos están garantizados por el parent. Email y alias pueden ser null/vacío.
+  const optional: Array<[string, string | null | undefined, boolean]> = [
+    ["Email", datos.email, true],
+    ["Alias", datos.alias, true],
+  ]
+  const fields: Field[] = [
+    { label: "Nombre",       value: datos.nombre,      copy: false },
+    { label: "RUT",          value: datos.rut,         copy: true  },
+    { label: "Banco",        value: datos.banco,       copy: false },
+    { label: "Tipo",         value: datos.tipo_cuenta, copy: false },
+    { label: "N° de cuenta", value: datos.numero,      copy: true  },
+    ...optional
+      .filter(([, v]) => typeof v === "string" && v.trim().length > 0)
+      .map(([label, value, copy]) => ({ label, value: (value as string).trim(), copy })),
+  ]
 
   const [copied, setCopied] = useState<string | null>(null)
 
@@ -82,15 +85,35 @@ export default function TransferCard({ datos, billNombre, amount, shareUrl }: Pr
       }}
     >
       {/* Heading */}
-      <h2
-        style={{
-          fontFamily: "'Instrument Serif', ui-serif, Georgia, serif",
-          fontSize: 26, fontWeight: 700, letterSpacing: -0.6,
-          lineHeight: 1.05, color: TEXT, margin: 0,
-        }}
-      >
-        Transfiérele<br/>a {host.split(" ")[0]}
-      </h2>
+      <div className="flex items-start justify-between gap-3">
+        <h2
+          style={{
+            fontFamily: "'Instrument Serif', ui-serif, Georgia, serif",
+            fontSize: 26, fontWeight: 700, letterSpacing: -0.6,
+            lineHeight: 1.05, color: TEXT, margin: 0,
+          }}
+        >
+          Transfiérele<br/>a {host.split(" ")[0]}
+        </h2>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="shrink-0 rounded-full"
+            style={{
+              padding: "6px 12px",
+              background: INK_SOFT,
+              color: INK,
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: -0.05,
+              border: "none",
+            }}
+          >
+            Editar
+          </button>
+        )}
+      </div>
       <p
         className="mt-2 text-sm"
         style={{ color: MUTED, letterSpacing: -0.05, lineHeight: 1.5 }}

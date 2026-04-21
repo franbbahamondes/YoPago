@@ -59,12 +59,12 @@ export function isOwnedBill(slug: string): boolean {
 
 export type BankInfo = {
   nombre: string
+  rut: string
   banco: string
   tipo_cuenta: string
   numero: string
-  rut: string
-  email: string
-  alias: string
+  email?: string
+  alias?: string
 }
 
 export function getSavedBank(): BankInfo | null {
@@ -73,6 +73,12 @@ export function getSavedBank(): BankInfo | null {
   catch { return null }
 }
 
+/**
+ * Guarda solo si los 5 requeridos están completos.
+ * Prefill del próximo wizard → nunca se rellena con data parcial.
+ */
 export function saveBank(info: BankInfo) {
+  const required = [info.nombre, info.rut, info.banco, info.tipo_cuenta, info.numero]
+  if (required.some(v => !v || !v.trim())) return
   localStorage.setItem(KEY_BANK, JSON.stringify(info))
 }
