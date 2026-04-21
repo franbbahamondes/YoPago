@@ -4,7 +4,7 @@ import ParticipantChip from "@/components/ParticipantChip"
 import { formatCLP } from "@/lib/format"
 import { itemEffectiveTotal } from "@/lib/totals"
 import { INK, TEXT, MUTED, LINE } from "@/lib/design-tokens"
-import { SUCCESS, WARNING, WARNING_DOT, WARNING_HIGHLIGHT } from "@/lib/semantic-tokens"
+import { SUCCESS } from "@/lib/semantic-tokens"
 import type { Item, Participant, ItemAssignment } from "@/types/database"
 
 interface Props {
@@ -38,7 +38,7 @@ export default function ItemRow({
       style={{
         background: "#fff",
         borderRadius: 16,
-        border: `1px solid ${unassigned ? WARNING_HIGHLIGHT : LINE}`,
+        border: `1px solid ${unassigned ? `${INK}22` : LINE}`,
         padding: 12,
       }}
     >
@@ -109,9 +109,9 @@ export default function ItemRow({
       {unassigned && (
         <div
           className="mt-2 flex items-center gap-1.5"
-          style={{ fontSize: 12, color: WARNING, fontWeight: 600, letterSpacing: -0.05 }}
+          style={{ fontSize: 12, color: INK, fontWeight: 600, letterSpacing: -0.05 }}
         >
-          <span style={{ width: 6, height: 6, borderRadius: 999, background: WARNING_DOT }} />
+          <span style={{ width: 6, height: 6, borderRadius: 999, background: INK }} />
           Sin asignar
         </div>
       )}

@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Geist, Instrument_Serif } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
+import { INK, INK_SOFT, INK_DEEP } from "@/lib/design-tokens"
 import { Analytics } from "@vercel/analytics/next"
 
 const geist = Geist({
@@ -27,7 +28,16 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="es" className={`h-full ${geist.variable} ${instrument.variable}`}>
       <body className="min-h-full bg-background text-foreground antialiased">
         {children}
-        <Toaster richColors position="top-center" />
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            style: {
+              background: INK_SOFT,
+              color: INK_DEEP,
+              border: `1px solid ${INK}22`,
+            },
+          }}
+        />
         <Analytics />
       </body>
     </html>
