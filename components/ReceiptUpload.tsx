@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import posthog from "posthog-js"
 import { formatCLP } from "@/lib/format"
 import { INK, INK_SOFT, TEXT, MUTED, LINE } from "@/lib/design-tokens"
+import { SUCCESS, SUCCESS_BG, SUCCESS_BORDER } from "@/lib/semantic-tokens"
 
 interface ExtractedItem {
   name: string
@@ -31,6 +32,7 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
   const busy = uploading || extracting
 
   const handleFile = async (file: File) => {
+    const startedAt = Date.now()
     setUploading(true)
     try {
       let blob: Blob = file
@@ -103,6 +105,10 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         bill_id: bill.id,
         items_detected: json.items?.length ?? 0,
       })
+      posthog.capture("ocr_waiting_viewed", {
+        bill_id: bill.id,
+        duration_ms: Date.now() - startedAt,
+      })
       setExtracted(json.items)
     } catch (e) {
       posthog.captureException(e)
@@ -168,16 +174,16 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         <div
           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
           style={{
-            background: "#ECFDF5",
-            border: "1px solid #10B98133",
-            color: "#047857",
+            background: SUCCESS_BG,
+            border: `1px solid ${SUCCESS_BORDER}`,
+            color: SUCCESS,
             fontSize: 11,
             fontWeight: 700,
             letterSpacing: 1.2,
             textTransform: "uppercase",
           }}
         >
-          <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke="#047857" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke={SUCCESS} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
           Listo
         </div>
         <h3
@@ -346,11 +352,40 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         </div>
       )}
 
-      {/* Keyframes for spin — local to component so we don't touch globals.css */}
-      <style jsx>{`
+      {/* Skeleton rows while OCR is running — previews where items will land */}
+      {busy && (
+        <div className="mt-4 flex flex-col gap-2">
+          {[0, 1, 2, 3].map(i => (
+            <SkeletonItemRow key={i} delay={i * 120} />
+          ))}
+        </div>
+      )}
+
+      {/* Keyframes for spin + shimmer — global so inline-styled children can reference them */}
+      <style jsx global>{`
         @keyframes yp-spin { to { transform: rotate(360deg); } }
+        @keyframes yp-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
       `}</style>
     </div>
+  )
+}
+
+function SkeletonItemRow({ delay }: { delay: number }) {
+  return (
+    <div
+      style={{
+        height: 60,
+        borderRadius: 16,
+        border: `1px solid ${LINE}`,
+        background:
+          "linear-gradient(90deg, #F3F4F6 0%, #E5E7EB 50%, #F3F4F6 100%)",
+        backgroundSize: "200% 100%",
+        animation: `yp-shimmer 1.8s ease-in-out ${delay}ms infinite`,
+      }}
+    />
   )
 }
 

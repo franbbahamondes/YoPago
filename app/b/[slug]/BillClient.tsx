@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from "react"
 import posthog from "posthog-js"
 import JoinDialog from "@/components/JoinDialog"
 import ItemRow from "@/components/ItemRow"
+import ItemEditSheet from "@/components/ItemEditSheet"
 import AddItemForm from "@/components/AddItemForm"
 import SummarySection from "@/components/SummarySection"
 import TransferCard from "@/components/TransferCard"
@@ -15,7 +16,7 @@ import { getBillIdentity, isOwnedBill } from "@/lib/local-storage"
 import { computeTotals } from "@/lib/totals"
 import { transferStatus, toTransferData } from "@/lib/transfer-data"
 import { formatCLP } from "@/lib/format"
-import { INK, INK_SOFT, INK_DEEP, TEXT, MUTED, LINE, BG } from "@/lib/design-tokens"
+import { INK, TEXT, MUTED, LINE, BG } from "@/lib/design-tokens"
 import type { Bill, Item, Participant, ItemAssignment, TransferDataRow } from "@/types/database"
 import { toast } from "sonner"
 
@@ -27,8 +28,6 @@ interface Props {
   initialTransferData: TransferDataRow | null
 }
 
-type PayTab = "items" | "pay"
-
 export default function BillClient({ bill, initialItems, initialParticipants, initialAssignments, initialTransferData }: Props) {
   const [items, setItems] = useState<Item[]>(initialItems)
   const [participants, setParticipants] = useState<Participant[]>(initialParticipants)
@@ -39,8 +38,8 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
   const [myParticipantId, setMyParticipantId] = useState<string | null>(null)
   const [showJoin, setShowJoin] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
-  const [view, setView] = useState<PayTab>("items")
   const [editTransferOpen, setEditTransferOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<Item | null>(null)
 
   const shareUrl = typeof window !== "undefined" ? window.location.href : ""
 
@@ -52,8 +51,16 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
     } else {
       setShowJoin(true)
     }
-    setIsOwner(isOwnedBill(bill.slug))
-  }, [bill.slug])
+    const owned = isOwnedBill(bill.slug)
+    setIsOwner(owned)
+
+    posthog.capture("bill_detail_viewed", {
+      bill_slug: bill.slug,
+      role: owned ? "owner" : "invitee",
+      has_transfer_data: transferStatus(initialTransferData) === "complete",
+      item_count: initialItems.length,
+    })
+  }, [bill.slug, initialTransferData, initialItems.length])
 
   // Realtime subscriptions
   useEffect(() => {
@@ -147,9 +154,28 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
     } catch { toast.error("No se pudo copiar") }
   }
 
+  const shareLink = async () => {
+    const shareData = {
+      title: billData.nombre,
+      text: `Entra a la cuenta "${billData.nombre}"`,
+      url: shareUrl,
+    }
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share(shareData)
+        posthog.capture("bill_link_shared", { bill_slug: bill.slug, method: "web_share" })
+        return
+      } catch (err) {
+        // User canceled share sheet — not an error
+        if (err instanceof Error && err.name === "AbortError") return
+      }
+    }
+    // Fallback: copy to clipboard
+    copyLink()
+  }
+
   const tStatus = transferStatus(transferData)
   const hasCompleteTransfer = tStatus === "complete"
-  const hasIncompleteTransfer = tStatus === "partial"
   const datos = toTransferData(transferData)
 
   const totals = useMemo(() => computeTotals({
@@ -204,10 +230,45 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
             yo<span style={{ fontWeight: 900, transform: "skewX(-4deg)", display: "inline-block", margin: "0 -0.04em" }}>/</span>pago
           </a>
           <div className="flex items-center gap-2">
+            {isOwner && (
+              <button
+                type="button"
+                onClick={() => setEditTransferOpen(true)}
+                aria-label="Editar datos de transferencia"
+                style={{
+                  position: "relative",
+                  width: 36, height: 36, borderRadius: 999,
+                  background: "#fff", border: `1px solid ${LINE}`,
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M10.5 2.5l3 3L5 14H2v-3l8.5-8.5z"
+                    stroke={TEXT}
+                    strokeWidth="1.4"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </svg>
+                {!hasCompleteTransfer && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      top: 6, right: 6,
+                      width: 7, height: 7, borderRadius: 999,
+                      background: INK,
+                      border: "1.5px solid #fff",
+                    }}
+                  />
+                )}
+              </button>
+            )}
             <button
               type="button"
-              onClick={copyLink}
-              aria-label="Copiar link"
+              onClick={shareLink}
+              aria-label="Compartir link"
               style={{
                 width: 36, height: 36, borderRadius: 999,
                 background: "#fff", border: `1px solid ${LINE}`,
@@ -264,170 +325,97 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
           )}
         </div>
 
-        {/* Banner: owner has partial transfer data (migrated from legacy) */}
-        {isOwner && hasIncompleteTransfer && (
-          <div
-            className="mb-4 flex items-start gap-3"
-            style={{
-              padding: "14px 16px",
-              borderRadius: 14,
-              background: INK_SOFT,
-              border: `1px solid ${INK}22`,
-            }}
-          >
-            <div
-              className="shrink-0"
-              style={{
-                width: 20, height: 20, borderRadius: 999, background: INK, color: "#fff",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 12, fontWeight: 700,
-              }}
-            >!</div>
-            <div className="flex-1 min-w-0">
-              <div style={{ fontSize: 13, fontWeight: 600, color: INK_DEEP, letterSpacing: -0.1, lineHeight: 1.35 }}>
-                Tus datos de transferencia están incompletos
-              </div>
-              <div className="mt-0.5" style={{ fontSize: 12, color: INK_DEEP, letterSpacing: -0.05, lineHeight: 1.45 }}>
-                Complétalos para que tus invitados puedan pagarte.
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditTransferOpen(true)}
-                className="mt-2 rounded-full"
-                style={{
-                  padding: "6px 14px",
-                  background: INK,
-                  color: "#fff",
-                  fontSize: 12, fontWeight: 600, letterSpacing: -0.05,
-                  border: "none",
-                }}
-              >
-                Completar datos
-              </button>
+        {/* Upload boleta (solo owner) */}
+        {isOwner && (
+          <div className="mb-4">
+            <ReceiptUpload
+              bill={billData}
+              onItemsExtracted={(newItems) => setItems(p => [...p, ...newItems])}
+              onBillUpdated={(updated) => setBillData(updated)}
+            />
+          </div>
+        )}
+
+        {/* Progress bar */}
+        {items.length > 0 && (
+          <div className="mb-3">
+            <div className="flex justify-between mb-1.5" style={{ fontSize: 12 }}>
+              <span style={{ color: MUTED, letterSpacing: -0.05 }}>
+                {assignedItemsCount} de {items.length} asignados
+              </span>
+              <span style={{ color: TEXT, fontWeight: 600 }}>{progressPct}%</span>
             </div>
-          </div>
-        )}
-
-        {/* Tabs when transfer data is available */}
-        {hasCompleteTransfer && items.length > 0 && (
-          <div
-            className="mb-4 inline-flex p-1"
-            style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12 }}
-          >
-            {([
-              { k: "items", label: isOwner ? "Cuenta" : "Mis ítems" },
-              { k: "pay",   label: isOwner ? "Cobrar"  : "Pagar" },
-            ] as const).map(t => (
-              <button
-                key={t.k}
-                type="button"
-                onClick={() => setView(t.k)}
+            <div style={{ height: 4, background: LINE, borderRadius: 2, overflow: "hidden" }}>
+              <div
                 style={{
-                  padding: "7px 14px", borderRadius: 10,
-                  background: view === t.k ? INK : "transparent",
-                  color: view === t.k ? "#fff" : MUTED,
-                  fontSize: 13, fontWeight: 600, letterSpacing: -0.05,
-                  transition: "all 150ms ease",
+                  height: "100%", background: INK, borderRadius: 2,
+                  width: `${progressPct}%`, transition: "width 300ms ease",
                 }}
-              >{t.label}</button>
-            ))}
-          </div>
-        )}
-
-        {view === "items" && (
-          <>
-            {/* Upload boleta (solo owner) */}
-            {isOwner && (
-              <div className="mb-4">
-                <ReceiptUpload
-                  bill={billData}
-                  onItemsExtracted={(newItems) => setItems(p => [...p, ...newItems])}
-                  onBillUpdated={(updated) => setBillData(updated)}
-                />
-              </div>
-            )}
-
-            {/* Progress bar */}
-            {items.length > 0 && (
-              <div className="mb-3">
-                <div className="flex justify-between mb-1.5" style={{ fontSize: 12 }}>
-                  <span style={{ color: MUTED, letterSpacing: -0.05 }}>
-                    {assignedItemsCount} de {items.length} asignados
-                  </span>
-                  <span style={{ color: TEXT, fontWeight: 600 }}>{progressPct}%</span>
-                </div>
-                <div style={{ height: 4, background: LINE, borderRadius: 2, overflow: "hidden" }}>
-                  <div
-                    style={{
-                      height: "100%", background: INK, borderRadius: 2,
-                      width: `${progressPct}%`, transition: "width 300ms ease",
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Items */}
-            <div className="flex flex-col gap-2.5">
-              {items.map(item => (
-                <ItemRow
-                  key={item.id}
-                  item={item}
-                  participants={participants}
-                  assignments={assignments}
-                  isOwner={isOwner}
-                  myParticipantId={myParticipantId}
-                  onDeleted={handleItemDeleted}
-                  onUpdated={handleItemUpdated}
-                  onAssignToggle={handleAssignToggle}
-                />
-              ))}
-              <AddItemForm
-                billId={bill.id}
-                nextOrden={items.length}
-                isOwner={isOwner}
-                onAdded={handleItemAdded}
               />
-              {items.length === 0 && !isOwner && (
-                <p
-                  className="py-8 text-center"
-                  style={{ fontSize: 14, color: MUTED, letterSpacing: -0.05 }}
-                >
-                  El organizador está agregando los ítems…
-                </p>
-              )}
             </div>
-
-            {/* Propina (owner) + descuento global (todos) */}
-            {items.length > 0 && (
-              <div className="mt-4">
-                <TipDiscountPanel bill={billData} isOwner={isOwner} onUpdated={setBillData} />
-              </div>
-            )}
-
-            {/* Resumen (hidden for invitee — the sticky bar shows their part) */}
-            {isOwner && (
-              <div className="mt-4">
-                <SummarySection
-                  bill={billData}
-                  items={items}
-                  participants={participants}
-                  assignments={assignments}
-                  myParticipantId={myParticipantId}
-                />
-              </div>
-            )}
-          </>
+          </div>
         )}
 
-        {view === "pay" && hasCompleteTransfer && datos && (
-          <TransferCard
-            datos={datos}
-            billNombre={billData.nombre}
-            amount={isOwner ? undefined : myTotal}
-            shareUrl={shareUrl}
-            onEdit={isOwner ? () => setEditTransferOpen(true) : undefined}
+        {/* Items */}
+        <div className="flex flex-col gap-2.5">
+          {items.map(item => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              participants={participants}
+              assignments={assignments}
+              isOwner={isOwner}
+              myParticipantId={myParticipantId}
+              onEdit={setEditingItem}
+              onAssignToggle={handleAssignToggle}
+            />
+          ))}
+          <AddItemForm
+            billId={bill.id}
+            nextOrden={items.length}
+            isOwner={isOwner}
+            onAdded={handleItemAdded}
           />
+          {items.length === 0 && !isOwner && (
+            <p
+              className="py-8 text-center"
+              style={{ fontSize: 14, color: MUTED, letterSpacing: -0.05 }}
+            >
+              El organizador está agregando los ítems…
+            </p>
+          )}
+        </div>
+
+        {/* Propina (owner) + descuento global (todos) */}
+        {items.length > 0 && (
+          <div className="mt-4">
+            <TipDiscountPanel bill={billData} isOwner={isOwner} onUpdated={setBillData} />
+          </div>
+        )}
+
+        {/* Resumen (solo owner) */}
+        {isOwner && (
+          <div className="mt-4">
+            <SummarySection
+              bill={billData}
+              items={items}
+              participants={participants}
+              assignments={assignments}
+              myParticipantId={myParticipantId}
+            />
+          </div>
+        )}
+
+        {/* Transfer card inline — solo invitee cuando el bill tiene datos completos */}
+        {!isOwner && hasCompleteTransfer && datos && items.length > 0 && (
+          <div className="mt-4">
+            <TransferCard
+              datos={datos}
+              billNombre={billData.nombre}
+              amount={myTotal}
+              shareUrl={shareUrl}
+            />
+          </div>
         )}
       </main>
 
@@ -437,6 +425,14 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
         billId={bill.id}
         billSlug={bill.slug}
         initial={transferData}
+      />
+
+      <ItemEditSheet
+        open={editingItem !== null}
+        onClose={() => setEditingItem(null)}
+        item={editingItem}
+        onUpdated={handleItemUpdated}
+        onDeleted={handleItemDeleted}
       />
 
       {/* Sticky bottom summary + CTA */}
@@ -477,36 +473,23 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
                 </div>
               )}
             </div>
-            {hasCompleteTransfer && (
-              <button
-                type="button"
-                onClick={() => setView(v => v === "pay" ? "items" : "pay")}
-                className="w-full"
-                style={{
-                  height: 52, borderRadius: 14, background: INK, color: "#fff",
-                  fontSize: 15, fontWeight: 600, letterSpacing: -0.1,
-                  boxShadow: "0 8px 20px -8px rgba(55,48,163,0.5)",
-                }}
-              >
-                {view === "pay"
-                  ? (isOwner ? "Volver a la cuenta" : "Volver a los ítems")
-                  : (isOwner ? "Ver datos para cobrar" : "Continuar a pagar")}
-              </button>
-            )}
-            {!hasCompleteTransfer && isOwner && (
-              <button
-                type="button"
-                onClick={() => setEditTransferOpen(true)}
-                className="w-full"
-                style={{
-                  height: 52, borderRadius: 14, background: INK, color: "#fff",
-                  fontSize: 15, fontWeight: 600, letterSpacing: -0.1,
-                  boxShadow: "0 8px 20px -8px rgba(55,48,163,0.5)",
-                }}
-              >
-                {hasIncompleteTransfer ? "Completar datos para cobrar" : "Agregar datos para cobrar"}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={shareLink}
+              className="w-full inline-flex items-center justify-center gap-2"
+              style={{
+                height: 52, borderRadius: 14, background: INK, color: "#fff",
+                fontSize: 15, fontWeight: 600, letterSpacing: -0.1,
+                boxShadow: "0 8px 20px -8px rgba(55,48,163,0.5)",
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M11 5l-3-3-3 3" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M8 2v9" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/>
+                <path d="M3 9v3a1 1 0 001 1h8a1 1 0 001-1V9" stroke="#fff" strokeWidth="1.6" strokeLinecap="round"/>
+              </svg>
+              Compartir link
+            </button>
           </div>
         </div>
       )}

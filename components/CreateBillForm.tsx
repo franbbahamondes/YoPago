@@ -17,14 +17,9 @@ import TransferFields, { EMPTY_TRANSFER, type TransferFieldsValue } from "@/comp
 import { FieldLabel, UnderlineInput } from "@/components/form-primitives"
 import { toast } from "sonner"
 
-const NIL_UUID = "00000000-0000-0000-0000-000000000000"
+import { INK, INK_DEEP, INK_SOFT, TEXT, MUTED, LINE } from "@/lib/design-tokens"
 
-const INK = "#3730A3"
-const INK_DEEP = "#1E1B4B"
-const INK_SOFT = "#EEF0FB"
-const TEXT = "#0A0A0A"
-const MUTED = "#6B7280"
-const LINE = "#E5E7EB"
+const NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
 type Step = 0 | 1 | 2 | 3
 
@@ -113,7 +108,17 @@ export default function CreateBillForm() {
         if (otrosErr) throw otrosErr
       }
 
+      let transferSaveStatus: "success" | "failed" | "skipped" = "skipped"
       if (status === "complete") {
+        saveBank({
+          nombre: t.nombre.trim(),
+          rut: t.rut.trim(),
+          banco: t.banco.trim(),
+          tipo_cuenta: t.tipo_cuenta.trim(),
+          numero: t.numero.trim(),
+          email: t.email.trim() || undefined,
+          alias: t.alias.trim() || undefined,
+        })
         const { error: tErr } = await supabase.from("transfer_data").insert({
           bill_id: bill.id,
           nombre: t.nombre.trim(),
@@ -125,19 +130,12 @@ export default function CreateBillForm() {
           alias: t.alias.trim() || null,
         })
         if (tErr) {
-          // No bloquear la creación — el usuario puede agregar los datos después vía edit flow.
           console.error("transfer_data insert failed:", tErr)
           posthog.capture("transfer_data_insert_failed", { bill_slug: slug, error: tErr.message })
+          toast.warning("Creamos tu cuenta, pero no pudimos guardar los datos de transferencia. Podrás agregarlos desde el bill.")
+          transferSaveStatus = "failed"
         } else {
-          saveBank({
-            nombre: t.nombre.trim(),
-            rut: t.rut.trim(),
-            banco: t.banco.trim(),
-            tipo_cuenta: t.tipo_cuenta.trim(),
-            numero: t.numero.trim(),
-            email: t.email.trim() || undefined,
-            alias: t.alias.trim() || undefined,
-          })
+          transferSaveStatus = "success"
         }
       }
 
@@ -152,6 +150,7 @@ export default function CreateBillForm() {
         bill_slug: slug,
         event_name: nombre.trim(),
         participant_count: 1 + otros.length,
+        transfer_save_status: transferSaveStatus,
         has_transfer_data: status === "complete",
         has_pre_registered_participants: otros.length > 0,
         marketing_opt_in: true,

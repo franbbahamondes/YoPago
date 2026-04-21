@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import posthog from "posthog-js"
 import { formatCLP } from "@/lib/format"
 import { INK, INK_SOFT, INK_DEEP, TEXT, MUTED, LINE } from "@/lib/design-tokens"
+import { SURFACE, WHATSAPP, WHATSAPP_BG, WHATSAPP_BORDER } from "@/lib/semantic-tokens"
 
 interface Props {
   datos: TransferData
@@ -200,7 +201,7 @@ export default function TransferCard({ datos, billNombre, amount, shareUrl, onEd
                 className="shrink-0"
                 style={{
                   width: 32, height: 32, borderRadius: 10,
-                  background: copied === f.label ? INK_SOFT : "#F3F4F6",
+                  background: copied === f.label ? INK_SOFT : SURFACE,
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}
               >
@@ -263,9 +264,9 @@ export default function TransferCard({ datos, billNombre, amount, shareUrl, onEd
             className="flex-1 inline-flex items-center justify-center gap-2"
             style={{
               height: 44, borderRadius: 12,
-              background: "#25D36614",
-              border: "1px solid #25D36644",
-              color: "#128C7E",
+              background: WHATSAPP_BG,
+              border: `1px solid ${WHATSAPP_BORDER}`,
+              color: WHATSAPP,
               fontSize: 14, fontWeight: 600, letterSpacing: -0.05,
             }}
           >
