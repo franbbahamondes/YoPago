@@ -7,14 +7,16 @@ import ItemRow from "@/components/ItemRow"
 import AddItemForm from "@/components/AddItemForm"
 import SummarySection from "@/components/SummarySection"
 import TransferCard from "@/components/TransferCard"
+import TransferEditSheet from "@/components/TransferEditSheet"
 import ReceiptUpload from "@/components/ReceiptUpload"
 import TipDiscountPanel from "@/components/TipDiscountPanel"
 import { createClient } from "@/lib/supabase/client"
 import { getBillIdentity, isOwnedBill } from "@/lib/local-storage"
 import { computeTotals } from "@/lib/totals"
+import { transferStatus, toTransferData } from "@/lib/transfer-data"
 import { formatCLP } from "@/lib/format"
-import { INK, TEXT, MUTED, LINE, BG } from "@/lib/design-tokens"
-import type { Bill, Item, Participant, ItemAssignment, DatosTransferencia } from "@/types/database"
+import { INK, INK_SOFT, INK_DEEP, TEXT, MUTED, LINE, BG } from "@/lib/design-tokens"
+import type { Bill, Item, Participant, ItemAssignment, TransferDataRow } from "@/types/database"
 import { toast } from "sonner"
 
 interface Props {
@@ -22,20 +24,23 @@ interface Props {
   initialItems: Item[]
   initialParticipants: Participant[]
   initialAssignments: ItemAssignment[]
+  initialTransferData: TransferDataRow | null
 }
 
 type PayTab = "items" | "pay"
 
-export default function BillClient({ bill, initialItems, initialParticipants, initialAssignments }: Props) {
+export default function BillClient({ bill, initialItems, initialParticipants, initialAssignments, initialTransferData }: Props) {
   const [items, setItems] = useState<Item[]>(initialItems)
   const [participants, setParticipants] = useState<Participant[]>(initialParticipants)
   const [assignments, setAssignments] = useState<ItemAssignment[]>(initialAssignments)
   const [billData, setBillData] = useState<Bill>(bill)
+  const [transferData, setTransferData] = useState<TransferDataRow | null>(initialTransferData)
 
   const [myParticipantId, setMyParticipantId] = useState<string | null>(null)
   const [showJoin, setShowJoin] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [view, setView] = useState<PayTab>("items")
+  const [editTransferOpen, setEditTransferOpen] = useState(false)
 
   const shareUrl = typeof window !== "undefined" ? window.location.href : ""
 
@@ -80,6 +85,15 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
       )
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "bills", filter: `id=eq.${bill.id}` },
         (payload) => setBillData(payload.new as Bill)
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "transfer_data", filter: `bill_id=eq.${bill.id}` },
+        (payload) => {
+          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+            setTransferData(payload.new as TransferDataRow)
+          } else if (payload.eventType === "DELETE") {
+            setTransferData(null)
+          }
+        }
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -133,8 +147,10 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
     } catch { toast.error("No se pudo copiar") }
   }
 
-  const datos = billData.datos_transferencia as unknown as DatosTransferencia | null
-  const hasTransferData = !!(datos && (datos.banco || datos.numero || datos.alias))
+  const tStatus = transferStatus(transferData)
+  const hasCompleteTransfer = tStatus === "complete"
+  const hasIncompleteTransfer = tStatus === "partial"
+  const datos = toTransferData(transferData)
 
   const totals = useMemo(() => computeTotals({
     items,
@@ -163,7 +179,7 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
     : undefined) || (isOwner ? hostFirstName : "")
 
   return (
-    <div className="min-h-screen" style={{ background: BG, paddingBottom: hasTransferData || items.length > 0 ? 148 : 24 }}>
+    <div className="min-h-screen" style={{ background: BG, paddingBottom: hasCompleteTransfer || items.length > 0 ? 148 : 24 }}>
       {showJoin && <JoinDialog bill={billData} participants={participants} onJoined={handleJoined} />}
 
       {/* Header — iOS-style wordmark + avatar */}
@@ -248,8 +264,52 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
           )}
         </div>
 
+        {/* Banner: owner has partial transfer data (migrated from legacy) */}
+        {isOwner && hasIncompleteTransfer && (
+          <div
+            className="mb-4 flex items-start gap-3"
+            style={{
+              padding: "14px 16px",
+              borderRadius: 14,
+              background: INK_SOFT,
+              border: `1px solid ${INK}22`,
+            }}
+          >
+            <div
+              className="shrink-0"
+              style={{
+                width: 20, height: 20, borderRadius: 999, background: INK, color: "#fff",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 12, fontWeight: 700,
+              }}
+            >!</div>
+            <div className="flex-1 min-w-0">
+              <div style={{ fontSize: 13, fontWeight: 600, color: INK_DEEP, letterSpacing: -0.1, lineHeight: 1.35 }}>
+                Tus datos de transferencia están incompletos
+              </div>
+              <div className="mt-0.5" style={{ fontSize: 12, color: INK_DEEP, letterSpacing: -0.05, lineHeight: 1.45 }}>
+                Complétalos para que tus invitados puedan pagarte.
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditTransferOpen(true)}
+                className="mt-2 rounded-full"
+                style={{
+                  padding: "6px 14px",
+                  background: INK,
+                  color: "#fff",
+                  fontSize: 12, fontWeight: 600, letterSpacing: -0.05,
+                  border: "none",
+                }}
+              >
+                Completar datos
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Tabs when transfer data is available */}
-        {hasTransferData && items.length > 0 && (
+        {hasCompleteTransfer && items.length > 0 && (
           <div
             className="mb-4 inline-flex p-1"
             style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12 }}
@@ -322,13 +382,12 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
                   onAssignToggle={handleAssignToggle}
                 />
               ))}
-              {isOwner && (
-                <AddItemForm
-                  billId={bill.id}
-                  nextOrden={items.length}
-                  onAdded={handleItemAdded}
-                />
-              )}
+              <AddItemForm
+                billId={bill.id}
+                nextOrden={items.length}
+                isOwner={isOwner}
+                onAdded={handleItemAdded}
+              />
               {items.length === 0 && !isOwner && (
                 <p
                   className="py-8 text-center"
@@ -339,10 +398,10 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
               )}
             </div>
 
-            {/* Owner-only controls */}
-            {isOwner && items.length > 0 && (
+            {/* Propina (owner) + descuento global (todos) */}
+            {items.length > 0 && (
               <div className="mt-4">
-                <TipDiscountPanel bill={billData} onUpdated={setBillData} />
+                <TipDiscountPanel bill={billData} isOwner={isOwner} onUpdated={setBillData} />
               </div>
             )}
 
@@ -361,15 +420,24 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
           </>
         )}
 
-        {view === "pay" && hasTransferData && datos && (
+        {view === "pay" && hasCompleteTransfer && datos && (
           <TransferCard
             datos={datos}
             billNombre={billData.nombre}
             amount={isOwner ? undefined : myTotal}
             shareUrl={shareUrl}
+            onEdit={isOwner ? () => setEditTransferOpen(true) : undefined}
           />
         )}
       </main>
+
+      <TransferEditSheet
+        open={editTransferOpen}
+        onClose={() => setEditTransferOpen(false)}
+        billId={bill.id}
+        billSlug={bill.slug}
+        initial={transferData}
+      />
 
       {/* Sticky bottom summary + CTA */}
       {items.length > 0 && (
@@ -409,7 +477,7 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
                 </div>
               )}
             </div>
-            {hasTransferData && (
+            {hasCompleteTransfer && (
               <button
                 type="button"
                 onClick={() => setView(v => v === "pay" ? "items" : "pay")}
@@ -425,10 +493,10 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
                   : (isOwner ? "Ver datos para cobrar" : "Continuar a pagar")}
               </button>
             )}
-            {!hasTransferData && isOwner && (
+            {!hasCompleteTransfer && isOwner && (
               <button
                 type="button"
-                onClick={copyLink}
+                onClick={() => setEditTransferOpen(true)}
                 className="w-full"
                 style={{
                   height: 52, borderRadius: 14, background: INK, color: "#fff",
@@ -436,7 +504,7 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
                   boxShadow: "0 8px 20px -8px rgba(55,48,163,0.5)",
                 }}
               >
-                Compartir link
+                {hasIncompleteTransfer ? "Completar datos para cobrar" : "Agregar datos para cobrar"}
               </button>
             )}
           </div>
