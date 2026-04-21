@@ -7,6 +7,7 @@ import { transferStatus } from "@/lib/transfer-data"
 import TransferFields, { EMPTY_TRANSFER, type TransferFieldsValue } from "@/components/TransferFields"
 import type { TransferDataRow } from "@/types/database"
 import { INK, TEXT, MUTED, LINE } from "@/lib/design-tokens"
+import { ERROR, SURFACE, WARNING_BG, WARNING_BORDER, WARNING_STRONG } from "@/lib/semantic-tokens"
 import { toast } from "sonner"
 import posthog from "posthog-js"
 
@@ -136,7 +137,7 @@ export default function TransferEditSheet({ open, onClose, billId, billSlug, ini
             onClick={onClose}
             aria-label="Cerrar"
             className="flex h-9 w-9 items-center justify-center rounded-full"
-            style={{ background: "#F3F4F6", border: "none", color: TEXT }}
+            style={{ background: SURFACE, border: "none", color: TEXT }}
           >
             ✕
           </button>
@@ -159,9 +160,9 @@ export default function TransferEditSheet({ open, onClose, billId, billSlug, ini
             style={{
               padding: "12px 14px",
               borderRadius: 12,
-              background: "#FEF3C7",
-              border: "1px solid #F59E0B55",
-              color: "#92400E",
+              background: WARNING_BG,
+              border: `1px solid ${WARNING_BORDER}`,
+              color: WARNING_STRONG,
               fontSize: 13,
               lineHeight: 1.45,
               letterSpacing: -0.1,
@@ -214,7 +215,7 @@ export default function TransferEditSheet({ open, onClose, billId, billSlug, ini
                   className="flex-1 rounded-2xl"
                   style={{
                     height: 44,
-                    background: "#DC2626",
+                    background: ERROR,
                     color: "#fff",
                     border: "none",
                     fontSize: 14, fontWeight: 600,
@@ -232,7 +233,7 @@ export default function TransferEditSheet({ open, onClose, billId, billSlug, ini
                   height: 44,
                   background: "#fff",
                   border: `1px solid ${LINE}`,
-                  color: "#DC2626",
+                  color: ERROR,
                   fontSize: 14, fontWeight: 500,
                 }}
               >

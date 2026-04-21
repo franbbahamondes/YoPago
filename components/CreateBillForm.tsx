@@ -17,18 +17,11 @@ import TransferFields, { EMPTY_TRANSFER, type TransferFieldsValue } from "@/comp
 import { FieldLabel, UnderlineInput } from "@/components/form-primitives"
 import { toast } from "sonner"
 
-const SUGERENCIAS = ["🍝 Cena", "🍻 Previa", "🏖️ Viaje", "🏠 Arriendo", "🎂 Cumpleaños"]
+import { INK, INK_DEEP, INK_SOFT, TEXT, MUTED, LINE } from "@/lib/design-tokens"
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
-const INK = "#3730A3"
-const INK_DEEP = "#1E1B4B"
-const INK_SOFT = "#EEF0FB"
-const TEXT = "#0A0A0A"
-const MUTED = "#6B7280"
-const LINE = "#E5E7EB"
-
-type Step = 0 | 1 | 2 | 3 | 4
+type Step = 0 | 1 | 2 | 3
 
 export default function CreateBillForm() {
   const router = useRouter()
@@ -56,7 +49,7 @@ export default function CreateBillForm() {
     }
   }, [])
 
-  const next = () => setStep((s) => Math.min(4, s + 1) as Step)
+  const next = () => setStep((s) => Math.min(3, s + 1) as Step)
   const back = () => setStep((s) => Math.max(0, s - 1) as Step)
 
   const agregarInvitado = () => {
@@ -71,7 +64,7 @@ export default function CreateBillForm() {
   const crearCuenta = async (overrideTransfer?: TransferFieldsValue) => {
     if (!nombre.trim()) {
       toast.error("Ponle un nombre al evento")
-      setStep(2)
+      setStep(1)
       return
     }
     const t = overrideTransfer ?? transfer
@@ -115,7 +108,17 @@ export default function CreateBillForm() {
         if (otrosErr) throw otrosErr
       }
 
+      let transferSaveStatus: "success" | "failed" | "skipped" = "skipped"
       if (status === "complete") {
+        saveBank({
+          nombre: t.nombre.trim(),
+          rut: t.rut.trim(),
+          banco: t.banco.trim(),
+          tipo_cuenta: t.tipo_cuenta.trim(),
+          numero: t.numero.trim(),
+          email: t.email.trim() || undefined,
+          alias: t.alias.trim() || undefined,
+        })
         const { error: tErr } = await supabase.from("transfer_data").insert({
           bill_id: bill.id,
           nombre: t.nombre.trim(),
@@ -127,19 +130,12 @@ export default function CreateBillForm() {
           alias: t.alias.trim() || null,
         })
         if (tErr) {
-          // No bloquear la creación — el usuario puede agregar los datos después vía edit flow.
           console.error("transfer_data insert failed:", tErr)
           posthog.capture("transfer_data_insert_failed", { bill_slug: slug, error: tErr.message })
+          toast.warning("Creamos tu cuenta, pero no pudimos guardar los datos de transferencia. Podrás agregarlos desde el bill.")
+          transferSaveStatus = "failed"
         } else {
-          saveBank({
-            nombre: t.nombre.trim(),
-            rut: t.rut.trim(),
-            banco: t.banco.trim(),
-            tipo_cuenta: t.tipo_cuenta.trim(),
-            numero: t.numero.trim(),
-            email: t.email.trim() || undefined,
-            alias: t.alias.trim() || undefined,
-          })
+          transferSaveStatus = "success"
         }
       }
 
@@ -154,6 +150,7 @@ export default function CreateBillForm() {
         bill_slug: slug,
         event_name: nombre.trim(),
         participant_count: 1 + otros.length,
+        transfer_save_status: transferSaveStatus,
         has_transfer_data: status === "complete",
         has_pre_registered_participants: otros.length > 0,
         marketing_opt_in: true,
@@ -171,11 +168,12 @@ export default function CreateBillForm() {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-8 pb-10 pt-10">
       {step === 0 && <Welcome onContinue={next} />}
-      {step === 1 && <HowItWorks onBack={back} onContinue={next} />}
-      {step === 2 && (
+      {step === 1 && (
         <EventName
           nombre={nombre}
           setNombre={setNombre}
+          tuNombre={transfer.nombre}
+          setTuNombre={(v) => setTransfer({ ...transfer, nombre: v })}
           onBack={back}
           onContinue={() => {
             if (!nombre.trim()) {
@@ -186,7 +184,7 @@ export default function CreateBillForm() {
           }}
         />
       )}
-      {step === 3 && (
+      {step === 2 && (
         <Invitees
           invitados={otrosParticipantes}
           nuevo={nuevoInvitado}
@@ -197,7 +195,7 @@ export default function CreateBillForm() {
           onContinue={next}
         />
       )}
-      {step === 4 && (
+      {step === 3 && (
         <Transfer
           value={transfer}
           onChange={setTransfer}
@@ -391,49 +389,98 @@ function Subtitle({ children }: { children: ReactNode }) {
 
 
 // ─────────────────────────────────────────────
-// Step 0 — Welcome
+// Step 0 — Welcome (combined: bienvenida + cómo funciona)
 // ─────────────────────────────────────────────
 
 function Welcome({ onContinue }: { onContinue: () => void }) {
+  const steps = [
+    { n: "01", title: "Sube la boleta", body: "Foto y listo — leemos los ítems por ti.", preview: <ReceiptPreview /> },
+    { n: "02", title: "Asigna cada ítem", body: "Toca quién pidió qué. Calculamos los totales.", preview: <AssignPreview /> },
+    { n: "03", title: "Cobra sin perseguir", body: "Cada invitado ve cuánto debe y cómo pagarte.", preview: <TransferPreview /> },
+  ]
   return (
     <div className="flex min-h-[calc(100vh-5rem)] flex-col">
-      <div className="flex flex-1 flex-col justify-center">
-        <Logo size={40} />
-        <h1
-          className="font-sans"
-          style={{
-            marginTop: 36,
-            fontSize: 52,
-            fontWeight: 700,
-            letterSpacing: -1.5,
-            lineHeight: 0.98,
-            color: TEXT,
-          }}
-        >
-          Divídelo<br />sin drama.
-        </h1>
-        <p
-          style={{
-            marginTop: 18,
-            fontSize: 17,
-            lineHeight: 1.45,
-            color: MUTED,
-            letterSpacing: -0.2,
-            maxWidth: 320,
-          }}
-        >
-          La manera más rápida de dividir una cuenta, sin registro, sin descargas.
-        </p>
+      <Logo size={34} />
+      <h1
+        className="font-sans"
+        style={{
+          marginTop: 28,
+          fontSize: 44,
+          fontWeight: 700,
+          letterSpacing: -1.3,
+          lineHeight: 0.98,
+          color: TEXT,
+          margin: 0,
+          marginBlockStart: 28,
+        }}
+      >
+        Divídelo<br />sin drama.
+      </h1>
+      <p
+        style={{
+          marginTop: 14,
+          fontSize: 15,
+          lineHeight: 1.45,
+          color: MUTED,
+          letterSpacing: -0.2,
+          maxWidth: 320,
+          margin: 0,
+          marginBlockStart: 14,
+        }}
+      >
+        Dividir una cuenta en segundos, sin registro ni descargas.
+      </p>
+
+      <div className="mt-7 flex flex-col gap-2.5">
+        {steps.map((s) => (
+          <div
+            key={s.n}
+            className="flex items-center gap-3"
+            style={{
+              padding: 12,
+              borderRadius: 16,
+              background: "#fff",
+              border: `1px solid ${LINE}`,
+            }}
+          >
+            <div
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: 12,
+                background: INK_SOFT,
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+              }}
+            >
+              {s.preview}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div style={{ fontSize: 10, fontWeight: 700, color: INK, letterSpacing: 1.4, marginBottom: 2 }}>
+                {s.n}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: TEXT, letterSpacing: -0.25 }}>
+                {s.title}
+              </div>
+              <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.4, letterSpacing: -0.05, marginTop: 2 }}>
+                {s.body}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
-      <div className="flex flex-col gap-3">
-        <PrimaryButton onClick={onContinue}>Crear cuenta</PrimaryButton>
+      <div className="mt-auto flex flex-col gap-2.5 pt-8">
+        <PrimaryButton onClick={onContinue}>Empezar</PrimaryButton>
         <div
           className="text-center"
           style={{
-            fontSize: 14,
+            fontSize: 13,
             color: MUTED,
-            padding: "10px 0",
+            padding: "6px 0",
             letterSpacing: -0.05,
             lineHeight: 1.4,
           }}
@@ -448,73 +495,6 @@ function Welcome({ onContinue }: { onContinue: () => void }) {
             Términos
           </a>
         </div>
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────
-// Step 1 — How it works
-// ─────────────────────────────────────────────
-
-function HowItWorks({ onBack, onContinue }: { onBack: () => void; onContinue: () => void }) {
-  const steps = [
-    { n: "01", title: "Sube la boleta", body: "Toma una foto y leemos los ítems automáticamente.", preview: <ReceiptPreview /> },
-    { n: "02", title: "Asigna cada ítem", body: "Toca quién pidió qué. Los totales se calculan solos.", preview: <AssignPreview /> },
-    { n: "03", title: "Cobra sin perseguir a nadie", body: "Cada invitado ve cuánto te debe y cómo transferirte.", preview: <TransferPreview /> },
-  ]
-  return (
-    <div className="flex min-h-[calc(100vh-5rem)] flex-col">
-      <NavRow step={0} onBack={onBack} />
-
-      <DisplayHeading>
-        Así funciona<br />YoPago
-      </DisplayHeading>
-
-      <div className="mt-8 flex flex-col gap-3.5">
-        {steps.map((s) => (
-          <div
-            key={s.n}
-            className="flex items-center gap-3.5 p-3.5"
-            style={{
-              borderRadius: 18,
-              background: "#fff",
-              border: `1px solid ${LINE}`,
-            }}
-          >
-            <div
-              style={{
-                width: 68,
-                height: 68,
-                borderRadius: 12,
-                background: INK_SOFT,
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                position: "relative",
-              }}
-            >
-              {s.preview}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div style={{ fontSize: 11, fontWeight: 700, color: INK, letterSpacing: 1.5, marginBottom: 4 }}>
-                {s.n}
-              </div>
-              <div style={{ fontSize: 17, fontWeight: 600, color: TEXT, letterSpacing: -0.3, marginBottom: 4 }}>
-                {s.title}
-              </div>
-              <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.4, letterSpacing: -0.05 }}>
-                {s.body}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-auto pt-10">
-        <PrimaryButton onClick={onContinue}>Empezar</PrimaryButton>
       </div>
     </div>
   )
@@ -603,24 +583,28 @@ function TransferPreview() {
 function EventName({
   nombre,
   setNombre,
+  tuNombre,
+  setTuNombre,
   onBack,
   onContinue,
 }: {
   nombre: string
   setNombre: (v: string) => void
+  tuNombre: string
+  setTuNombre: (v: string) => void
   onBack: () => void
   onContinue: () => void
 }) {
   return (
     <div className="flex min-h-[calc(100vh-5rem)] flex-col">
-      <NavRow step={1} onBack={onBack} />
+      <NavRow step={1} total={4} onBack={onBack} />
 
       <DisplayHeading>
         ¿Cómo se llama<br />este evento?
       </DisplayHeading>
-      <Subtitle>Dale un nombre para encontrarlo después.</Subtitle>
+      <Subtitle>Dale un nombre y dinos cómo te llamas.</Subtitle>
 
-      <div className="mt-10">
+      <div className="mt-8">
         <FieldLabel>Nombre del evento</FieldLabel>
         <UnderlineInput
           value={nombre}
@@ -631,27 +615,12 @@ function EventName({
       </div>
 
       <div className="mt-7">
-        <FieldLabel>Sugerencias</FieldLabel>
-        <div className="flex flex-wrap gap-2">
-          {SUGERENCIAS.map((s) => (
-            <button
-              key={s}
-              onClick={() => setNombre(s.replace(/^\S+\s*/, ""))}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 999,
-                background: "#fff",
-                border: `1px solid ${LINE}`,
-                fontSize: 14,
-                color: TEXT,
-                letterSpacing: -0.1,
-                cursor: "pointer",
-              }}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+        <FieldLabel>Tu nombre</FieldLabel>
+        <UnderlineInput
+          value={tuNombre}
+          onChange={setTuNombre}
+          placeholder="Juan"
+        />
       </div>
 
       <div className="mt-auto pt-10">
@@ -692,7 +661,7 @@ function Invitees({
   }
   return (
     <div className="flex min-h-[calc(100vh-5rem)] flex-col">
-      <NavRow step={2} onBack={onBack} />
+      <NavRow step={2} total={4} onBack={onBack} />
 
       <DisplayHeading>
         ¿Quiénes<br />participan?
@@ -889,7 +858,7 @@ function Transfer({
 
   return (
     <div className="flex min-h-[calc(100vh-5rem)] flex-col">
-      <NavRow step={3} onBack={onBack} onSkip={onSkip} />
+      <NavRow step={3} total={4} onBack={onBack} onSkip={onSkip} />
 
       <div
         className="mb-3.5 inline-flex items-center gap-1.5 self-start"

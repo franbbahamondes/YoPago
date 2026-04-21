@@ -7,6 +7,8 @@ import { toast } from "sonner"
 import posthog from "posthog-js"
 import { formatCLP } from "@/lib/format"
 import { INK, INK_SOFT, TEXT, MUTED, LINE } from "@/lib/design-tokens"
+import { SUCCESS, SUCCESS_BG, SUCCESS_BORDER } from "@/lib/semantic-tokens"
+import ExtractedItemEditSheet, { type ExtractedDraft } from "@/components/ExtractedItemEditSheet"
 
 interface ExtractedItem {
   name: string
@@ -28,9 +30,11 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
   const [preview, setPreview] = useState<string | null>(bill.imagen_url)
   const [extracted, setExtracted] = useState<ExtractedItem[] | null>(null)
   const [saving, setSaving] = useState(false)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const busy = uploading || extracting
 
   const handleFile = async (file: File) => {
+    const startedAt = Date.now()
     setUploading(true)
     try {
       let blob: Blob = file
@@ -103,6 +107,10 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         bill_id: bill.id,
         items_detected: json.items?.length ?? 0,
       })
+      posthog.capture("ocr_waiting_viewed", {
+        bill_id: bill.id,
+        duration_ms: Date.now() - startedAt,
+      })
       setExtracted(json.items)
     } catch (e) {
       posthog.captureException(e)
@@ -162,22 +170,37 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
 
   // ── Review state: items extracted, user confirms ────────────────────────
   if (extracted) {
-    const subtotal = extracted.reduce((s, it) => s + it.quantity * it.price, 0)
+    const subtotal = extracted.reduce(
+      (s, it) => s + Math.max(0, it.quantity * it.price - (it.discount_amount ?? 0)),
+      0
+    )
+    const editingDraft: ExtractedDraft | null =
+      editingIndex != null && extracted[editingIndex] ? extracted[editingIndex] : null
+
+    const updateDraft = (i: number, next: ExtractedDraft) => {
+      setExtracted(prev => prev?.map((x, j) => j === i ? next : x) ?? prev)
+      posthog.capture("extracted_item_edited", { bill_id: bill.id, index: i })
+    }
+    const removeDraft = (i: number) => {
+      setExtracted(prev => prev?.filter((_, j) => j !== i) ?? prev)
+      posthog.capture("extracted_item_removed", { bill_id: bill.id, index: i })
+    }
+
     return (
       <div className="space-y-3">
         <div
           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1"
           style={{
-            background: "#ECFDF5",
-            border: "1px solid #10B98133",
-            color: "#047857",
+            background: SUCCESS_BG,
+            border: `1px solid ${SUCCESS_BORDER}`,
+            color: SUCCESS,
             fontSize: 11,
             fontWeight: 700,
             letterSpacing: 1.2,
             textTransform: "uppercase",
           }}
         >
-          <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke="#047857" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" stroke={SUCCESS} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
           Listo
         </div>
         <h3
@@ -187,40 +210,81 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
             lineHeight: 1.05, color: TEXT,
           }}
         >
-          Encontramos<br/>{extracted.length} ítems
+          Encontramos<br/>{extracted.length} {extracted.length === 1 ? "ítem" : "ítems"}
         </h3>
         <p className="text-sm" style={{ color: MUTED, letterSpacing: -0.05 }}>
-          Revísalos y confírmalos para agregarlos a la cuenta.
+          Toca cualquier ítem para corregir nombre, precio o cantidad antes de confirmar.
         </p>
 
-        <div
-          className="overflow-hidden"
-          style={{ background: "#fff", borderRadius: 18, border: `1px solid ${LINE}` }}
-        >
-          {extracted.map((it, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 px-4 py-3"
-              style={{ borderBottom: i < extracted.length - 1 ? `1px solid ${LINE}` : "none" }}
-            >
-              <div className="flex-1 min-w-0">
-                <div
-                  className="truncate"
-                  style={{ fontSize: 15, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}
-                >{it.name}</div>
-                <div className="mt-0.5" style={{ fontSize: 12, color: MUTED }}>
-                  {it.quantity > 1 ? `${it.quantity} × ${formatCLP(it.price)}` : "1 unidad"}
-                </div>
-              </div>
-              <div
-                style={{
-                  fontSize: 15, fontWeight: 600, color: TEXT, letterSpacing: -0.2,
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >{formatCLP(it.quantity * it.price)}</div>
-            </div>
-          ))}
-        </div>
+        {extracted.length === 0 ? (
+          <div
+            className="px-4 py-8 text-center"
+            style={{
+              background: "#fff", borderRadius: 18, border: `1px dashed ${LINE}`,
+              fontSize: 14, color: MUTED, letterSpacing: -0.05,
+            }}
+          >
+            Eliminaste todos los ítems. Descarta para volver a subir la boleta.
+          </div>
+        ) : (
+          <div
+            className="overflow-hidden"
+            style={{ background: "#fff", borderRadius: 18, border: `1px solid ${LINE}` }}
+          >
+            {extracted.map((it, i) => {
+              const hasDiscount = (it.discount_amount ?? 0) > 0
+              const gross = it.quantity * it.price
+              const net = Math.max(0, gross - (it.discount_amount ?? 0))
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setEditingIndex(i)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    borderBottom: i < extracted.length - 1 ? `1px solid ${LINE}` : "none",
+                    cursor: "pointer",
+                  }}
+                  aria-label={`Editar ${it.name}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className="truncate"
+                      style={{ fontSize: 15, fontWeight: 600, color: TEXT, letterSpacing: -0.2 }}
+                    >{it.name}</div>
+                    <div className="mt-0.5" style={{ fontSize: 12, color: MUTED }}>
+                      {it.quantity > 1 ? `${it.quantity} × ${formatCLP(it.price)}` : "1 unidad"}
+                      {hasDiscount && (
+                        <span className="ml-1" style={{ color: SUCCESS, fontWeight: 600 }}>
+                          · -{formatCLP(it.discount_amount!)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div
+                    className="shrink-0 flex items-center gap-2"
+                    style={{
+                      fontSize: 15, fontWeight: 600, color: TEXT, letterSpacing: -0.2,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {hasDiscount && (
+                      <span className="line-through opacity-40" style={{ fontSize: 12, color: MUTED }}>
+                        {formatCLP(gross)}
+                      </span>
+                    )}
+                    <span>{formatCLP(net)}</span>
+                    <svg width="12" height="12" viewBox="0 0 12 12" style={{ opacity: 0.4 }}>
+                      <path d="M4 2l4 4-4 4" stroke={TEXT} strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         <div className="flex items-center justify-between px-2 pt-1">
           <span style={{ fontSize: 13, color: MUTED }}>Subtotal detectado</span>
@@ -235,7 +299,7 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         <div className="flex gap-2 pt-1">
           <button
             onClick={handleConfirmItems}
-            disabled={saving}
+            disabled={saving || extracted.length === 0}
             className="flex-1 disabled:opacity-60"
             style={{
               height: 52, borderRadius: 14, background: INK, color: "#fff",
@@ -257,6 +321,14 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
             Descartar
           </button>
         </div>
+
+        <ExtractedItemEditSheet
+          open={editingIndex !== null}
+          onClose={() => setEditingIndex(null)}
+          draft={editingDraft}
+          onSave={(next) => editingIndex != null && updateDraft(editingIndex, next)}
+          onDelete={() => editingIndex != null && removeDraft(editingIndex)}
+        />
       </div>
     )
   }
@@ -346,11 +418,40 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         </div>
       )}
 
-      {/* Keyframes for spin — local to component so we don't touch globals.css */}
-      <style jsx>{`
+      {/* Skeleton rows while OCR is running — previews where items will land */}
+      {busy && (
+        <div className="mt-4 flex flex-col gap-2">
+          {[0, 1, 2, 3].map(i => (
+            <SkeletonItemRow key={i} delay={i * 120} />
+          ))}
+        </div>
+      )}
+
+      {/* Keyframes for spin + shimmer — global so inline-styled children can reference them */}
+      <style jsx global>{`
         @keyframes yp-spin { to { transform: rotate(360deg); } }
+        @keyframes yp-shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
       `}</style>
     </div>
+  )
+}
+
+function SkeletonItemRow({ delay }: { delay: number }) {
+  return (
+    <div
+      style={{
+        height: 60,
+        borderRadius: 16,
+        border: `1px solid ${LINE}`,
+        background:
+          "linear-gradient(90deg, #F3F4F6 0%, #E5E7EB 50%, #F3F4F6 100%)",
+        backgroundSize: "200% 100%",
+        animation: `yp-shimmer 1.8s ease-in-out ${delay}ms infinite`,
+      }}
+    />
   )
 }
 

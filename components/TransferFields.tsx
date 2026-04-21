@@ -48,11 +48,11 @@ export default function TransferFields({
       </div>
       <div className="flex gap-4">
         <div style={{ flex: 1 }}>
-          <FieldLabel>Tipo</FieldLabel>
+          <FieldLabel>Tipo de cuenta</FieldLabel>
           <UnderlineSelect value={value.tipo_cuenta} onChange={set("tipo_cuenta")} options={TIPOS_CUENTA} placeholder="—" />
         </div>
         <div style={{ flex: 1.4 }}>
-          <FieldLabel>N° de cuenta</FieldLabel>
+          <FieldLabel>Nº de cuenta</FieldLabel>
           <UnderlineInput value={value.numero} onChange={set("numero")} inputMode="numeric" placeholder="00123456789" />
         </div>
       </div>
