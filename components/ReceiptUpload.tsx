@@ -36,16 +36,21 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
   const handleFile = async (file: File) => {
     const startedAt = Date.now()
     setUploading(true)
+    const tStart = performance.now()
+    let duration_heic_ms: number | undefined
     try {
       let blob: Blob = file
       // Convert HEIC on iOS
       if (file.type === "image/heic" || file.name.toLowerCase().endsWith(".heic")) {
+        const tHeic = performance.now()
         const heic2any = (await import("heic2any")).default
         blob = (await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 })) as Blob
+        duration_heic_ms = Math.round(performance.now() - tHeic)
       }
 
       // Resize to max 1280px at 0.8 quality via canvas.toDataURL (synchronous, iOS-safe)
       // Keeps base64 well under Vercel's 4.5MB body limit
+      const tResize = performance.now()
       const base64Image = await new Promise<string>((resolve) => {
         const img = new Image()
         const url = URL.createObjectURL(blob)
@@ -70,6 +75,7 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         }
         img.src = url
       })
+      const duration_resize_ms = Math.round(performance.now() - tResize)
 
       // Upload original blob to Supabase Storage in parallel (best-effort, non-blocking)
       void (async () => {
@@ -90,6 +96,7 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
       setUploading(false)
       setExtracting(true)
       const distinctId = posthog.get_distinct_id()
+      const tOcr = performance.now()
       const res = await fetch("/api/extract-receipt", {
         method: "POST",
         headers: {
@@ -103,9 +110,16 @@ export default function ReceiptUpload({ bill, onItemsExtracted, onBillUpdated }:
         throw new Error(json.error || `Error ${res.status} al procesar la imagen`)
       }
       const json = await res.json()
+      const duration_ocr_ms = Math.round(performance.now() - tOcr)
+      const duration_total_ms = Math.round(performance.now() - tStart)
       posthog.capture("receipt_uploaded", {
         bill_id: bill.id,
         items_detected: json.items?.length ?? 0,
+        duration_heic_ms,
+        duration_resize_ms,
+        duration_ocr_ms,
+        duration_total_ms,
+        image_bytes: base64Image.length,
       })
       posthog.capture("ocr_waiting_viewed", {
         bill_id: bill.id,
