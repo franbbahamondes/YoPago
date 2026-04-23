@@ -156,8 +156,7 @@ export default function BillClient({ bill, initialItems, initialParticipants, in
 
   const shareLink = async () => {
     const shareData = {
-      title: billData.nombre,
-      text: `Entra a la cuenta "${billData.nombre}"`,
+      title: `YoPago — ${billData.nombre}`,
       url: shareUrl,
     }
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {

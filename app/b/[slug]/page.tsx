@@ -1,9 +1,17 @@
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import BillClient from "./BillClient"
 
+const SLUG_RE = /^[23456789abcdefghjkmnpqrstuvwxyz]{8}/
+
+function normalizeSlug(raw: string): string {
+  const match = raw.match(SLUG_RE)
+  return match ? match[0] : raw
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
+  const { slug: raw } = await params
+  const slug = normalizeSlug(raw)
   const supabase = await createClient()
   const { data } = await supabase.from("bills").select("nombre, creador_nombre").eq("slug", slug).single()
   if (!data) return { title: "Cuenta no encontrada" }
@@ -14,7 +22,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export default async function BillPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
+  const { slug: raw } = await params
+  const slug = normalizeSlug(raw)
+  if (slug !== raw) redirect(`/b/${slug}`)
+
   const supabase = await createClient()
 
   const { data: bill } = await supabase
